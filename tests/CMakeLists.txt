@@ -1,0 +1,59 @@
+add_executable(test_reader test_reader.cpp)
+target_link_libraries(test_reader PRIVATE CUE4Parse)
+add_test(NAME test_reader COMMAND test_reader)
+
+add_executable(test_more_readers test_more_readers.cpp)
+target_link_libraries(test_more_readers PRIVATE CUE4Parse)
+add_test(NAME test_more_readers COMMAND test_more_readers)
+
+add_executable(test_compression_utils test_compression_utils.cpp)
+target_link_libraries(test_compression_utils PRIVATE CUE4Parse)
+add_test(NAME test_compression_utils COMMAND test_compression_utils)
+
+add_executable(test_core_misc test_core_misc.cpp)
+target_link_libraries(test_core_misc PRIVATE CUE4Parse)
+add_test(NAME test_core_misc COMMAND test_core_misc)
+
+add_executable(test_package_summary test_package_summary.cpp)
+target_link_libraries(test_package_summary PRIVATE CUE4Parse)
+add_test(NAME test_package_summary COMMAND test_package_summary)
+
+add_executable(test_compressed_proxy test_compressed_proxy.cpp)
+target_link_libraries(test_compressed_proxy PRIVATE CUE4Parse)
+add_test(NAME test_compressed_proxy COMMAND test_compressed_proxy)
+
+add_executable(test_name_pool test_name_pool.cpp)
+target_link_libraries(test_name_pool PRIVATE CUE4Parse)
+add_test(NAME test_name_pool COMMAND test_name_pool)
+
+add_executable(test_object_resource test_object_resource.cpp)
+target_link_libraries(test_object_resource PRIVATE CUE4Parse)
+add_test(NAME test_object_resource COMMAND test_object_resource)
+
+add_executable(test_package test_package.cpp)
+target_link_libraries(test_package PRIVATE CUE4Parse)
+add_test(NAME test_package COMMAND test_package)
+
+add_executable(test_properties test_properties.cpp)
+target_link_libraries(test_properties PRIVATE CUE4Parse)
+add_test(NAME test_properties COMMAND test_properties)
+
+add_executable(test_aggregate_properties test_aggregate_properties.cpp)
+target_link_libraries(test_aggregate_properties PRIVATE CUE4Parse)
+add_test(NAME test_aggregate_properties COMMAND test_aggregate_properties)
+
+add_executable(test_container_properties test_container_properties.cpp)
+target_link_libraries(test_container_properties PRIVATE CUE4Parse)
+add_test(NAME test_container_properties COMMAND test_container_properties)
+
+add_executable(test_soft_object_properties test_soft_object_properties.cpp)
+target_link_libraries(test_soft_object_properties PRIVATE CUE4Parse)
+add_test(NAME test_soft_object_properties COMMAND test_soft_object_properties)
+
+add_executable(test_delegate_properties test_delegate_properties.cpp)
+target_link_libraries(test_delegate_properties PRIVATE CUE4Parse)
+add_test(NAME test_delegate_properties COMMAND test_delegate_properties)
+
+add_executable(test_text_properties test_text_properties.cpp)
+target_link_libraries(test_text_properties PRIVATE CUE4Parse)
+add_test(NAME test_text_properties COMMAND test_text_properties)
