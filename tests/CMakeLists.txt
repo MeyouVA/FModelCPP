@@ -97,3 +97,7 @@ add_test(NAME test_curvetable COMMAND test_curvetable)
 add_executable(test_curveassets test_curveassets.cpp)
 target_link_libraries(test_curveassets PRIVATE CUE4Parse)
 add_test(NAME test_curveassets COMMAND test_curveassets)
+
+add_executable(test_linearcolor test_linearcolor.cpp)
+target_link_libraries(test_linearcolor PRIVATE CUE4Parse)
+add_test(NAME test_linearcolor COMMAND test_linearcolor)

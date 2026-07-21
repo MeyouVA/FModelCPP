@@ -13,3 +13,14 @@ add_subdirectory(CUE4Parse)
 
 enable_testing()
 add_subdirectory(tests)
+
+# The FModel Qt app builds only when Qt6 is found (via CMAKE_PREFIX_PATH / Qt6_DIR). Without Qt the library and
+# tests still configure and build normally.
+find_package(Qt6 QUIET COMPONENTS Widgets)
+if(Qt6_FOUND)
+    message(STATUS "Qt6 found (${Qt6_VERSION}) — building the FModel app.")
+    add_subdirectory(FModel)
+else()
+    message(STATUS "Qt6 not found — skipping the FModel app (library + tests only). "
+                   "Set -DCMAKE_PREFIX_PATH=<qt>/lib/cmake to enable it.")
+endif()

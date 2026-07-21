@@ -385,6 +385,21 @@ int main()
             CHECK(std::fabs(cl->FloatCurves[1].Eval(1.0f) -  0.5f) < 1e-4f); // G
             CHECK(std::fabs(cl->FloatCurves[2].Eval(1.0f) - 10.0f) < 1e-4f); // B
             CHECK(std::fabs(cl->FloatCurves[3].Eval(1.0f) -  0.5f) < 1e-4f); // A
+
+            // Unadjusted = the four curves evaluated straight (alpha curve non-empty, so no 1.0 default).
+            const auto unadj = cl->GetUnadjustedLinearColorValue(1.0f);
+            CHECK(std::fabs(unadj.R - 2.0f) < 1e-4f);
+            CHECK(std::fabs(unadj.G - 0.5f) < 1e-4f);
+            CHECK(std::fabs(unadj.B - 10.0f) < 1e-4f);
+            CHECK(std::fabs(unadj.A - 0.5f) < 1e-4f);
+
+            // Adjusted: RGB round-trips HSV->RGB (the adjusted pixel HSV is discarded before HSVToLinearRGB,
+            // matching FModel), and alpha becomes Lerp(AdjustMinAlpha=0, AdjustMaxAlpha=0, 0.5) = 0.
+            const auto adj = cl->GetLinearColorValue(1.0f);
+            CHECK(std::fabs(adj.R - 2.0f) < 1e-3f);
+            CHECK(std::fabs(adj.G - 0.5f) < 1e-3f);
+            CHECK(std::fabs(adj.B - 10.0f) < 1e-3f);
+            CHECK(std::fabs(adj.A - 0.0f) < 1e-4f);
         }
     }
 

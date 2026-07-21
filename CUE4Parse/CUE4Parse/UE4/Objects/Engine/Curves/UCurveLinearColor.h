@@ -5,10 +5,6 @@
 // Deliberate differences from C#:
 //   * FloatCurves is a std::array<FRichCurve, 4> of default-constructed curves (see the UCurveVector note on the
 //     null-vs-empty and positional-index bounds).
-//   * GetUnadjustedLinearColorValue / GetLinearColorValue are DEFERRED: they return an FLinearColor and use its
-//     LinearRGBToHsv / HSVToLinearRGB / WithAlpha color-space conversions, which live in the not-yet-ported
-//     Core/Math layer (FLinearColor). The Adjust* scalars are still deserialized so the data is complete; the two
-//     accessors arrive with FLinearColor. TODO.
 //   * WriteJson is omitted.
 #pragma once
 
@@ -17,6 +13,7 @@
 
 #include "RichCurve.h"
 #include "UCurveBase.h"
+#include "../../Core/Math/FLinearColor.h"
 
 namespace CUE4Parse::UE4::Assets::Readers { class FAssetArchive; }
 
@@ -29,7 +26,8 @@ namespace CUE4Parse::UE4::Objects::Engine::Curves
 
         void Deserialize(CUE4Parse::UE4::Assets::Readers::FAssetArchive& Ar, int64_t validPos) override;
 
-        // GetUnadjustedLinearColorValue / GetLinearColorValue deferred until FLinearColor is ported (see header note).
+        CUE4Parse::UE4::Objects::Core::Math::FLinearColor GetUnadjustedLinearColorValue(float inTime) const;
+        CUE4Parse::UE4::Objects::Core::Math::FLinearColor GetLinearColorValue(float inTime) const;
 
     private:
         // HSV adjustment scalars (read from the object's tagged properties; consumed by the deferred accessors).

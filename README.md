@@ -3,8 +3,51 @@
 A slow, faithful C++ port of [FModel](../FModel) and its parsing core **CUE4Parse** (originally C#).
 
 The goal is to stay as structurally close to the C# source as practical: same folder
-layout, same namespaces (`CUE4Parse::UE4::Readers`, ...), same type and method names. The
-FModel UI (WPF) is a later phase; it will keep the exact same look.
+layout, same namespaces (`CUE4Parse::UE4::Readers`, ...), same type and method names.
+
+The FModel app (originally WPF) is ported on **Qt 6 Widgets** and lives under `FModel/`. It keeps the same
+layout and structure as the C# UI. See [The FModel app](#the-fmodel-app) below.
+
+## The FModel app
+
+The `FModel/` directory is the C++ port of the WPF application, built on **Qt 6 Widgets** (chosen as the closest
+structural analog to WPF: data binding via signals/slots, tree/list/table views, dialogs). It builds only when
+Qt6 is found; the CUE4Parse library and tests build fine without it.
+
+- **Toolchain:** Qt 6.8.3 (MSVC 2022 64-bit) installed via `aqtinstall` to `C:\Qt\6.8.3\msvc2022_64`. Configure
+  with `-DCMAKE_PREFIX_PATH=C:/Qt/6.8.3/msvc2022_64`. The root `CMakeLists.txt` guards the app behind
+  `find_package(Qt6 QUIET)` so a Qt-less checkout still builds the library. `windeployqt` runs post-build to copy
+  the Qt runtime next to the exe.
+- **Ported so far:** `MainWindow` — the window **shell/layout** (`FModel/MainWindow.{h,cpp}`, `main.cpp`), mirroring
+  `MainWindow.xaml` closely: the Directory/Packages/Views/Settings/Help menu bar (+ the "Preview New Explorer
+  System" toggle); the left **Archives** (Loading Mode combo + Load + GAME ARCHIVES list + INFORMATION),
+  **Folders** (summary line + tree + INFORMATION), and **N Packages** (search + breadcrumb + list + INFORMATION)
+  tab control — INFORMATION blocks use FModel's value-left / caption-right layout; the right side with the
+  explorer / editor-tab-strip ("New Tab" + a `+` add-tab button) stack, the bottom-right preview-toggle buttons, and
+  the Log pane (showing FModel's intro lines). Named widgets keep their WPF `x:Name` (as members + `objectName`).
+  The deep wiring (ApplicationViewModel / CUE4Parse provider / thread worker) is **not** ported yet — menu actions
+  and controls are inert placeholders that log to the output pane.
+- **Theme** (`FModel/Theme.{h,cpp}`): reproduces FModel's **AdonisUI Dark** color scheme (App.xaml) as a Qt Fusion
+  `QPalette` + global stylesheet — exact AdonisUI layer colors (window `#2A2B34`, panels `#32323F`, insets `#262630`,
+  foreground `#f0f0f0`) with FModel's App.xaml accent overrides (accent `#206BD4`, alert `#D49220`, error `#C22B2B`).
+  The accent-blue status bar matches the WPF "Ready" state.
+- **Resources** (`FModel/Resources/`): copied verbatim from the C# app (107 files — icons, shaders, fonts,
+  highlighting definitions) and embedded via `resources.qrc` (AUTORCC), accessible as `:/Resources/…`. The window
+  icon and the log toolbar buttons use the real FModel PNGs.
+- **Framework** (`FModel/Framework/`): the MVVM base layer ported from `FModel/Framework`. `ViewModel`
+  (`INotifyPropertyChanged` + `INotifyDataErrorInfo`/`IDataErrorInfo`) → a `QObject` with a `propertyChanged`
+  signal, a templated `setProperty`, and the validation-error dictionary/indexer kept faithfully. `Command`
+  (`ICommand`) → an abstract `QObject` with `execute`/`canExecute`/`canExecuteChanged` (`object parameter` →
+  `QVariant`). `ViewModelCommand<T>` → a class template whose C# `WeakReference` to the context view-model is
+  modelled by Qt's `QPointer<T>` (nulls on destruction). The first concrete view-model on this
+  base is `FStatus` (`FModel/Framework/FStatus.{h,cpp}`, ported from `Framework/FStatus.cs`) — it tracks an
+  `EStatusKind` + label and derives `IsReady`, and it is wired into `MainWindow`'s status bar (the label binds
+  to `Status.Label` through the `propertyChanged` signal, matching the WPF binding). `EStatusKind` and the
+  other dependency-free plain enums live in `FModel/Enums.h` (ported from `Enums.cs`; the `[Description]` and
+  `AssetCategory` enums are deferred). Behaviour is covered by `FModel/tests/test_framework.cpp`
+  (QtTest, registered with ctest).
+
+The FModel UI (WPF) is being ported phase-by-phase alongside the CUE4Parse core below.
 
 ## Status
 
@@ -87,6 +130,7 @@ foundation** everything else builds on:
 | Curve eval subsystem | `UE4/Objects/Engine/Curves/{RealCurve,SimpleCurve,RichCurve}.cs` | same paths under `FModelCPP/.../Curves/*.{h,cpp}` |
 | UCurve* assets | `UE4/Objects/Engine/Curves/{UCurveBase,UCurveFloat,UCurveVector,UCurveLinearColor}.cs` | same paths under `FModelCPP/.../Curves/*.{h,cpp}` |
 | Math: UnrealMath + CubicCurve2D | `UE4/.../Math/UnrealMathUtility.cs`, `Utils/MathUtils.cs` | `UE4/Objects/Core/Math/UnrealMathUtility.h`, `Utils/MathUtils.h` |
+| Colors: FColor + FLinearColor | `UE4/.../Core/Math/{FColor,FLinearColor}.cs`, `Utils/UnsafePrint.cs` | `UE4/Objects/Core/Math/{FColor.h,FLinearColor.{h,cpp}}`, `Utils/UnsafePrint.h` |
 | FField / FProperty system | `UE4/Objects/UObject/{FField,UnrealType}.cs` | `UE4/Objects/UObject/{FField,UnrealType}.{h,cpp}` |
 | UStruct family | `UE4/Objects/UObject/{UField,UStruct,UScriptStruct,UEnum,UFunction,UClass}.cs` | same paths under `FModelCPP/.../UObject/*.{h,cpp}` |
 | UObjectRedirector | `UE4/Assets/Exports/UObjectRedirector.cs` | `UE4/Assets/Exports/UObjectRedirector.{h,cpp}` |
@@ -233,9 +277,17 @@ These are noted inline in the headers where they occur:
   `UCurveVector` (3 curves) and `UCurveLinearColor` (4 curves) pull their `FRichCurve`s out of the object's own
   top-level `StructProperty(RichCurve)` values, positionally, into a `std::array<FRichCurve, N>` (default-empty
   slots instead of C#'s nulls; the positional index is bounded to the array size). Registered as `"CurveFloat"`/
-  `"CurveVector"`/`"CurveLinearColor"`. **Deferred:** `UCurveLinearColor::GetLinearColorValue` /
-  `GetUnadjustedLinearColorValue` (HSV color math), which wait on `FLinearColor` from the Core/Math layer; the
-  `Adjust*` scalars they consume are still deserialized.
+  `"CurveVector"`/`"CurveLinearColor"`. `UCurveLinearColor::GetUnadjustedLinearColorValue` /
+  `GetLinearColorValue` (the HSV brightness/vibrance/saturation/hue/alpha adjustment pipeline) are now implemented
+  on top of the Core/Math `FLinearColor` (below). The adjusted pixel-HSV is computed but discarded before
+  `HSVToLinearRGB` — a faithful reproduction of FModel's behaviour, so the returned RGB round-trips the unadjusted
+  color and only the alpha (via `Lerp(AdjustMinAlpha, AdjustMaxAlpha, A)`) actually changes.
+- **The Core/Math color layer is ported** (`UE4/Objects/Core/Math/{FColor,FLinearColor}`). `FColor` is the 8-bit
+  gamma-space color (field order `B,G,R,A` matching the C# sequential layout) with `Hex`/`ToPackedARGB`/
+  `Requantize16to8`; `FLinearColor` is the 32-bit float RGBA with `ToFColor(sRGB)`/`ToSRGB`/`Hex` and the
+  `LinearRGBToHsv`/`HSVToLinearRGB`/`WithAlpha` conversions. `UnsafePrint::BytesToHex` (uppercase hex) backs the
+  `Hex` accessors; `UnrealMath` gained `Min3`/`Max3`/`Fmod`. **Deferred:** the `System.Numerics` implicit
+  `Vector3`/`Vector4` conversions (no vector consumer yet) and `FColor::Serialize` (no `Writers` layer yet).
 - **The `FField`/`FProperty` reflection system + the `UStruct` family are ported** (`UE4/Objects/UObject/`).
   `FField` (`FField.{h,cpp}`) is the base; `UnrealType.{h,cpp}` holds `FProperty` and its ~35 subclasses
   (`FIntProperty`, `FBoolProperty`, `FStructProperty`, `FArrayProperty`, `FEnumProperty`, the Verse types, …),
@@ -381,7 +433,7 @@ These are noted inline in the headers where they occur:
   localization loading (`FTextLocalizationResource`), the full `UStruct`/`UClass`-aware `ConstructObject`
   traversal (a name-keyed `ObjectTypeRegistry` stands in for it), the custom-version providers
   (`FEditorObjectVersion` etc.; property readers currently assume modern), game-specific property readers
-  (Borderlands4/OuterWorlds2/…), the named-struct table in `FScriptStruct` (needs Core/Math + engine structs),
+  (Borderlands4/OuterWorlds2/…), the named-struct table in `FScriptStruct` (needs the rest of Core/Math — `FVector`/`FQuat`/… — plus engine structs; `FColor`/`FLinearColor` are done),
   further concrete `UExport` subclasses (`UStringTable`, `UDataTable`, `UCurveTable`, `UScriptStruct`, `UEnum`,
   `UFunction`, `UObjectRedirector`, `UBlueprintGeneratedClass`, `UUserDefinedStruct`, `UUserDefinedEnum`,
   `UCurveFloat`/`UCurveVector`/`UCurveLinearColor` so far; `UStruct`/`UClass`/`UCurveBase` ported but unregistered),
