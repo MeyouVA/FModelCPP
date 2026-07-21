@@ -3,15 +3,18 @@
 // the object's Name and its Outer/Class/Super chain, which is enough to print full path names.
 //
 // Deliberate differences from C#:
-//   * Object *loading* is deferred with the object/property layer. The C# `Object` (Lazy<UObject>) and the
-//     Load/TryLoad helpers are omitted; a ResolvedObject here answers names and the resolution chain only.
-//   * ResolvedLoadedObject (which wraps an already-loaded UObject) is omitted until UObject exists, so
-//     ResolvedImportObject::Class returns null rather than a UScriptClass wrapper. TODO.
+//   * ResolvedLoadedObject (which wraps an already-loaded UObject) is omitted until the UStruct/UClass
+//     export types exist, so ResolvedImportObject::Class returns null rather than a UScriptClass wrapper,
+//     and an import's Object() stays null (C# maps class names like "Class"/"ScriptStruct" to UScriptClass).
+//     TODO once those export types are ported.
+//   * TryLoad / LoadAsync are omitted; consumers call Load<T>() (which returns null on a miss) directly.
 #pragma once
 
 #include <string>
 
 #include "../Objects/UObject/FName.h"
+
+namespace CUE4Parse::UE4::Assets::Exports { class UObject; }
 
 namespace CUE4Parse::UE4::Assets
 {
@@ -32,6 +35,13 @@ namespace CUE4Parse::UE4::Assets
         virtual ResolvedObject* Outer() const { return nullptr; }
         virtual ResolvedObject* Class() const { return nullptr; }
         virtual ResolvedObject* Super() const { return nullptr; }
+
+        // The lazily-loaded export object this resolves to (C#'s Lazy<UObject> Object), or null when this
+        // is not an export in a loadable package. Defined in the .cpp (needs the package + UObject types).
+        virtual Exports::UObject* Object() const;
+        Exports::UObject* Load() const { return Object(); }
+        template <typename T>
+        T* Load() const { return dynamic_cast<T*>(Object()); }
 
         std::string GetFullName(bool includeOuterMostName = true, bool includeClassPackage = false) const;
         void GetFullName(bool includeOuterMostName, std::string& result, bool includeClassPackage = false) const;

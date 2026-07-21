@@ -19,7 +19,7 @@
 #include "../Objects/FPropertyTag.h"
 #include "../../Objects/Core/Misc/FGuid.h"
 
-namespace CUE4Parse::UE4::Assets { class ResolvedObject; }
+namespace CUE4Parse::UE4::Assets { class ResolvedObject; class IPackage; }
 namespace CUE4Parse::UE4::Assets::Readers { class FAssetArchive; }
 
 namespace CUE4Parse::UE4::Assets::Exports
@@ -31,6 +31,7 @@ namespace CUE4Parse::UE4::Assets::Exports
     {
     public:
         std::string Name;
+        IPackage* Owner = nullptr; // The package this export was loaded from (C#'s UObject.Owner). Null until loaded.
         ResolvedObject* Class = nullptr;
         ResolvedObject* Outer = nullptr;
         ResolvedObject* Super = nullptr;

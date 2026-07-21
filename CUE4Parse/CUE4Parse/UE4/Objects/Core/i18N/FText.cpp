@@ -1,11 +1,13 @@
 // Ported from CUE4Parse/UE4/Objects/Core/i18N/FText.cs (all reading ctors).
-// See FText.h for the deliberate differences (deferred provider localization, assume-modern custom versions,
-// omitted game-specific quirks).
+// See FText.h for the deliberate differences (provider localization for Base only, assume-modern custom
+// versions, omitted game-specific quirks).
 #include "FText.h"
 
 #include "../../../Assets/Readers/FAssetArchive.h"
+#include "../../../Assets/Exports/Internationalization/UStringTable.h"
 #include "../../../Exceptions/ParserException.h"
 #include "../../../Versions/ObjectVersion.h"
+#include "../../../../FileProvider/IFileProvider.h"
 
 namespace CUE4Parse::UE4::Objects::Core::i18N
 {
@@ -97,7 +99,11 @@ namespace CUE4Parse::UE4::Objects::Core::i18N
         // for editor (non-filtered) packages.
         if (!Ar.IsFilterEditorOnly())
             Ar.SkipFString();
-        // LocalizedString needs the provider's Internationalization table (deferred) → stays empty, as in C#.
+        // (HonorofKingsWorld/EmbersOfTheUncrowned namespace/decryption quirks omitted — see header.)
+        // C#: Ar.Owner?.Provider?.Internationalization.SafeGet(ns, Key, SourceString) ?? "".
+        if (Ar.Owner != nullptr)
+            if (auto* provider = Ar.Owner->GetProvider())
+                LocalizedString = provider->GetInternationalization().SafeGet(Namespace, Key, SourceString);
     }
 
     FTextHistory::Base::Base(std::string ns, std::string key, std::string sourceString, std::string localizedString)
@@ -183,7 +189,26 @@ namespace CUE4Parse::UE4::Objects::Core::i18N
     {
         TableId = Ar.ReadFName();
         Key = Ar.ReadFString();
-        // Provider UStringTable resolution is deferred; SourceString/LocalizedString stay empty.
+        // C#: if the owning provider can load a UStringTable at TableId whose table has an entry for Key, take
+        // that entry as SourceString and localize it through the provider's Internationalization table.
+        // (DeltaForce's trailing int is a per-game quirk and omitted.)
+        if (Ar.Owner != nullptr)
+        {
+            if (auto* provider = Ar.Owner->GetProvider())
+            {
+                using CUE4Parse::UE4::Assets::Exports::Internationalization::UStringTable;
+                if (auto* table = provider->TryLoadPackageObject<UStringTable>(TableId.Text()))
+                {
+                    const auto it = table->StringTable.KeysToEntries.find(Key);
+                    if (it != table->StringTable.KeysToEntries.end())
+                    {
+                        SourceString = it->second;
+                        LocalizedString = provider->GetInternationalization().SafeGet(
+                            table->StringTable.TableNamespace, Key, it->second);
+                    }
+                }
+            }
+        }
     }
 
     FTextHistory::TextGenerator::TextGenerator(FAssetArchive& Ar)

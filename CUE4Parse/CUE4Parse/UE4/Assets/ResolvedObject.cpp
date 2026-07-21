@@ -43,6 +43,13 @@ namespace CUE4Parse::UE4::Assets
         result += Name().Text();
     }
 
+    Exports::UObject* ResolvedObject::Object() const
+    {
+        // C#: ExportIndex >= 0 && < ExportsLazy.Length ? ExportsLazy[ExportIndex] : null. GetExportObject
+        // does the bounds check and returns null when the package doesn't support loading.
+        return ExportIndex >= 0 ? Package->GetExportObject(ExportIndex) : nullptr;
+    }
+
     FName ResolvedPackageObject::Name() const
     {
         return FName(Package->GetName());

@@ -77,6 +77,23 @@ foundation** everything else builds on:
 | FText + FTextHistory (i18N) | `UE4/.../Core/i18N/FText.cs` | `UE4/Objects/Core/i18N/FText.{h,cpp}` |
 | Text / Optional properties | `UE4/.../Properties/{Text,Optional}Property.cs` | `UE4/Assets/Objects/Properties/{Text,Optional}Property.{h,cpp}` |
 | UObject (core) | `UE4/Assets/Exports/UObject.cs` | `UE4/Assets/Exports/UObject.{h,cpp}` (tagged path) |
+| Lazy export loading | `UE4/Assets/AbstractUePackage.cs`, `Package.cs` | `UE4/Assets/Package.{h,cpp}` (`GetExportObject`/`ConstructObject`) |
+| File provider (min) | `FileProvider/IFileProvider.cs`, `InternationalizationDictionary.cs` | `FileProvider/IFileProvider.h`, `InternationalizationDictionary.h` (lookup + TryLoadPackage subset) |
+| Cross-package import resolution | `UE4/Assets/AbstractUePackage.cs` (`ResolveImport`) | `UE4/Assets/Package.cpp` (`ResolveImport` via provider) |
+| Object type registry | `UE4/Assets/ObjectTypeRegistry.cs` | `UE4/Assets/ObjectTypeRegistry.{h,cpp}` (manual, reflection-free) |
+| UStringTable + FStringTable | `UE4/.../Exports/Internationalization/{UStringTable,FStringTable}.cs` | `UE4/Assets/Exports/Internationalization/{UStringTable,FStringTable}.{h,cpp}` |
+| UDataTable | `UE4/Assets/Exports/Engine/UDataTable.cs` | `UE4/Assets/Exports/Engine/UDataTable.{h,cpp}` |
+| UCurveTable | `UE4/Assets/Exports/Engine/UCurveTable.cs` | `UE4/Assets/Exports/Engine/UCurveTable.{h,cpp}` (+ `ECurveTableMode.h`) |
+| Curve eval subsystem | `UE4/Objects/Engine/Curves/{RealCurve,SimpleCurve,RichCurve}.cs` | same paths under `FModelCPP/.../Curves/*.{h,cpp}` |
+| UCurve* assets | `UE4/Objects/Engine/Curves/{UCurveBase,UCurveFloat,UCurveVector,UCurveLinearColor}.cs` | same paths under `FModelCPP/.../Curves/*.{h,cpp}` |
+| Math: UnrealMath + CubicCurve2D | `UE4/.../Math/UnrealMathUtility.cs`, `Utils/MathUtils.cs` | `UE4/Objects/Core/Math/UnrealMathUtility.h`, `Utils/MathUtils.h` |
+| FField / FProperty system | `UE4/Objects/UObject/{FField,UnrealType}.cs` | `UE4/Objects/UObject/{FField,UnrealType}.{h,cpp}` |
+| UStruct family | `UE4/Objects/UObject/{UField,UStruct,UScriptStruct,UEnum,UFunction,UClass}.cs` | same paths under `FModelCPP/.../UObject/*.{h,cpp}` |
+| UObjectRedirector | `UE4/Assets/Exports/UObjectRedirector.cs` | `UE4/Assets/Exports/UObjectRedirector.{h,cpp}` |
+| UBlueprintGeneratedClass | `UE4/Objects/Engine/UBlueprintGeneratedClass.cs` | `UE4/Objects/Engine/UBlueprintGeneratedClass.{h,cpp}` |
+| UUserDefinedStruct / UUserDefinedEnum | `UE4/Objects/Engine/UUserDefined{Struct,Enum}.cs` | `UE4/Objects/Engine/UUserDefined{Struct,Enum}.{h,cpp}` |
+| Reflection flag enums | `UE4/Objects/UObject/{EStructFlags,EClassFlags,EFunctionFlags}.cs` | `UE4/Objects/UObject/{EStructFlags,EClassFlags,EFunctionFlags}.h` + `CoreNetTypes.h` |
+| Provider object loading | `FileProvider/AbstractFileProvider.cs` (`LoadPackageObject`) | `FileProvider/IFileProvider.{h,cpp}` (`LoadPackageObject`/`TryLoadPackageObject<T>`) |
 
 ## Deliberate differences from C#
 
@@ -155,13 +172,104 @@ These are noted inline in the headers where they occur:
   (name + Outer/Class/Super chain + `GetPathName`/`GetFullName`) and a real
   `IPackage::ResolvePackageIndex`, so `FPackageIndex::Name()`, `FObjectExport::ClassName`, and
   `FObjectExport::ToString()` now resolve for real. Deliberate differences: C#'s `Package` derives from
-  `UObject` — this port implements `IPackage` directly (no `UObject` yet); object **loading** is deferred
-  (no `ExportsLazy`/`ConstructObject`/`DeserializeObject`, no `uexp`/`ubulk` payloads), so `ResolvedObject`
-  answers names but not `.Object`/`Load<T>`; the optional summary tables (thumbnails, depends, preload deps,
-  soft-object paths, data resources, trailer) are not read yet; cross-package import resolution
-  (`Provider.TryLoadPackage`) is deferred, so `ResolveImport` returns the in-package fallback (which still
-  yields the import's own name); byte-swapped (big-endian) packages throw for now; and `FPackageIndex`'s
-  `WeakReference` name cache is not reproduced (Name/ToString re-resolve). All marked `TODO`.
+  `UObject` — this port implements `IPackage` directly (no `UObject` yet); the optional summary tables
+  (thumbnails, depends, preload deps,
+  soft-object paths, data resources, trailer) are not read yet; byte-swapped (big-endian) packages throw for
+  now; and `FPackageIndex`'s `WeakReference` name cache is not reproduced (Name/ToString re-resolve). All
+  marked `TODO`.
+- **A minimal `IFileProvider` is ported, so cross-package imports resolve for real.** `IFileProvider`
+  (`FileProvider/IFileProvider.h`) exposes the surface the reader layer consumes — `GetVersions`,
+  `GetInternationalization`, and `TryLoadPackage` (returns a provider-owned `IPackage*`, null on miss) — plus
+  `InternationalizationDictionary` (the namespace→key→string localization table: `SafeGet`/`Override`). A
+  `Package` now carries its provider, and `ResolveImport` walks an import to its outermost package, loads that
+  package through the provider, and matches the import by object name + resolved outer path — so an import
+  resolves to the actual export in the other package (and `ResolvedObject::Load` returns that package's
+  object). `FTextHistory::Base` now resolves its `LocalizedString` through the provider's `Internationalization`
+  table (as in C#). Deliberate differences: the rest of C#'s large `IFileProvider` (the `Files`/`GameFile`
+  VFS, virtual/texture-cache paths, config inis, mappings container, the SaveAsset/CreateReader/SavePackage/
+  SaveAsset/CreateReader/SavePackage families) arrives with its layers; `TryLoadPackage` returns a `Package*`,
+  callers hold non-owning pointers (the provider owns loaded packages); the IoPackage import branch,
+  `/Script/` packages, and misses fall back to the in-package `ResolvedImportObject`; `.locres` loading
+  (`FTextLocalizationResource`) and the culture machinery are deferred, so the table is populated via
+  `Override`. All marked `TODO`. **`LoadPackageObject`/`TryLoadPackageObject<T>` are now ported** (in
+  `IFileProvider.cpp`): they split a path into (package, object) like C#'s `GetPathName`, load the package, and
+  return the named export cast to `T*` — used by `StringTableEntry` below.
+- **Concrete export types build through an `ObjectTypeRegistry`.** C# discovers
+  `UObject` subclasses by reflection; C++ has none, so `ObjectTypeRegistry` (`UE4/Assets/ObjectTypeRegistry.{h,cpp}`)
+  keeps a manual name→factory map (each type registers under its serialized class name, e.g. `StringTable`, `DataTable`).
+  `Package::ConstructObject` now consults the registry with the resolved class object's name — the same string
+  C#'s `UScriptClass.ConstructObject` ultimately looks up — so a `StringTable` export deserializes into a
+  `UStringTable` (its `FStringTable`: namespace + key→string entries, plus the metadata map) and a `DataTable`
+  into a `UDataTable` instead of a bare `UObject`. Unregistered classes still fall through to base `UObject`.
+- **`UDataTable`** (`UE4/Assets/Exports/Engine/UDataTable.{h,cpp}`) recovers its `RowStructName` from the tagged
+  `RowStruct` `ObjectProperty`, then reads its `RowMap` (row name → `FStructFallback`, an insertion-ordered
+  `vector<pair<FName, FStructFallback>>`). C# loads the row `UStruct` to drive parsing; that's deferred, so the
+  port always takes the equivalent by-name `FStructFallback` path (identical for tagged assets). This is the
+  first export to exercise the already-ported `FStructFallback` end-to-end.
+- **`UCurveTable`** (`UE4/Assets/Exports/Engine/UCurveTable.{h,cpp}` + `ECurveTableMode.h`) is the same shape as
+  `UDataTable`: a `RowMap` (row name → `FStructFallback`, insertion-ordered `vector<pair<FName, FStructFallback>>`),
+  but the row struct name comes from the serialized `ECurveTableMode` (`SimpleCurves`→`SimpleCurve`,
+  `RichCurves`→`RichCurve`, `Empty`→`""`) rather than a `RowStruct` property. The `bUpgradingCurveTable` branch
+  (`FFortniteMainBranchObjectVersion < ShrinkCurveTableSize`, which infers the mode from `numRows`) is
+  assume-modern — the mode byte is always read. `FindCurve`/`TryFindCurve` wrap a row in the concrete curve
+  (see below).
+- **The curve evaluation subsystem is ported** (`UE4/Objects/Engine/Curves/{RealCurve,SimpleCurve,RichCurve}.{h,cpp}`).
+  `FRealCurve` is the abstract base (`DefaultValue` + pre/post-infinity extrapolation + `CycleTime`); `FSimpleCurve`
+  (single interp mode + `(Time,Value)` keys) and `FRichCurve` (per-key interp mode + tangents, optionally weighted)
+  add their key arrays + a faithful `Eval`/`RemapTimeValue` (binary-search key lookup, linear/cubic/constant
+  interpolation, and the weighted-tangent bezier path via a ported `CubicCurve2D::SolveCubic`). Because C#'s
+  reflection `GetOrDefault` has no port equivalent, the curves are built from an `FStructFallback` by scanning its
+  tagged `Properties` (a `Keys` `ArrayProperty` of `StructProperty` -> per-key `FStructFallback`; the enum fields
+  accept an `EnumProperty` name or a raw `ByteProperty`). `UCurveTable::FindCurve` uses this to hand back an
+  `FSimpleCurve`/`FRichCurve` for the table's mode. **Deferred:** `FCompressedRichCurve` + the
+  `AnimCurveCompressionCodec` converter map (the unsafe quantized-key decompressors) and the binary
+  `FMutableArchive`-read ctors — the animation-compression arc; curve tables serialize as tagged data. The
+  well-known CUE4Parse quirk in `WeightedEvalForTwoKeys` (`sinAngle = Cos(angle)` for the arrive tangent) is
+  preserved verbatim. `UnrealMath` (`SmallNumber`/`IsNearlyZero`) + `CubicCurve2D` were added to the math layer to
+  support this.
+- **The `UCurve*` asset family is ported** (`UE4/Objects/Engine/Curves/{UCurveBase,UCurveFloat,UCurveVector,UCurveLinearColor}.{h,cpp}`) —
+  the first real exports built on the curve subsystem. `UCurveBase` is the abstract `UObject` subclass (not
+  registered); `UCurveFloat` is an empty subclass (its single curve stays a tagged `StructProperty`);
+  `UCurveVector` (3 curves) and `UCurveLinearColor` (4 curves) pull their `FRichCurve`s out of the object's own
+  top-level `StructProperty(RichCurve)` values, positionally, into a `std::array<FRichCurve, N>` (default-empty
+  slots instead of C#'s nulls; the positional index is bounded to the array size). Registered as `"CurveFloat"`/
+  `"CurveVector"`/`"CurveLinearColor"`. **Deferred:** `UCurveLinearColor::GetLinearColorValue` /
+  `GetUnadjustedLinearColorValue` (HSV color math), which wait on `FLinearColor` from the Core/Math layer; the
+  `Adjust*` scalars they consume are still deserialized.
+- **The `FField`/`FProperty` reflection system + the `UStruct` family are ported** (`UE4/Objects/UObject/`).
+  `FField` (`FField.{h,cpp}`) is the base; `UnrealType.{h,cpp}` holds `FProperty` and its ~35 subclasses
+  (`FIntProperty`, `FBoolProperty`, `FStructProperty`, `FArrayProperty`, `FEnumProperty`, the Verse types, …),
+  with `FField::Construct` dispatching on the serialized field-type name. On top of that, `UField → UStruct →
+  {UScriptStruct, UClass, UFunction}` and `UField → UEnum` deserialize their reflection data (super/children,
+  `ChildProperties`, struct/class/function flags, enum name→value pairs, implemented interfaces, the CDO index).
+  `UScriptStruct`/`UEnum`/`UFunction` are registered (as `"ScriptStruct"`/`"Enum"`/`"Function"`) so those exports
+  build into concrete types via the existing name-keyed `ConstructObject`; `UStruct`/`UClass` are intentionally
+  left unregistered, mirroring C#'s `[SkipObjectRegistration]`. Deferred (documented as TODO): the Kismet
+  bytecode (`ScriptBytecode` is skipped), `UClass.ConstructObject`/Blueprint decompiler, and the custom-version
+  gates (`FFrameworkObjectVersion`/`FCoreObjectVersion`/…) — the readers assume modern layouts.
+- **`UObjectRedirector`** (`UE4/Assets/Exports/UObjectRedirector.{h,cpp}`) is a trivial export: base `UObject`
+  then a `DestinationObject` `FPackageIndex`. Registered as `"ObjectRedirector"`.
+- **`UBlueprintGeneratedClass`** (`UE4/Objects/Engine/UBlueprintGeneratedClass.{h,cpp}`) is the concrete `UClass`
+  a Blueprint compiles to — the first registered `UClass` subclass, so a cooked BPGC export (whose class import
+  is `"BlueprintGeneratedClass"`) now deserializes fully instead of falling back to a bare `UObject`. Its one
+  custom-serialized member, the cooked `EditorTags` map, is ported (assume-modern for the
+  `FFortniteMainBranchObjectVersion` gate); the fields C# reads via the reflection accessor `GetOrDefault`
+  (`NumReplicatedProperties`, the component/timeline `FPackageIndex` arrays, the construction-script indices)
+  are recovered by scanning the base tagged `Properties` list, mirroring `UDataTable`'s `RowStruct` extraction.
+  Registering BPGC by name is enough for a native BPGC export; the full `SuperStruct`-chain walk in
+  `AbstractUePackage.ConstructObject` (which would matter for an *instance* of a Blueprint, class name `SomeBP_C`)
+  stays deferred — it needs to load a class reference as a `UStruct`, and in this port an import does not load to
+  a `UStruct`/`UScriptClass`, so the walk would dead-end at a base `UObject` regardless (see `Package::ConstructObject`).
+- **`UUserDefinedStruct` / `UUserDefinedEnum`** (`UE4/Objects/Engine/UUserDefined{Struct,Enum}.{h,cpp}`) are the
+  Blueprint-authored struct/enum, registered as `"UserDefinedStruct"` / `"UserDefinedEnum"`. `UUserDefinedEnum`
+  is a pure `UEnum` subclass (C#'s only extra member is a commented-out `DisplayNameMap`), so the registry just
+  produces the concrete type over `UEnum`'s existing name/CppForm/underlying-type deserialization.
+  `UUserDefinedStruct` reads its compile `Status` (a tagged `"Status"` `EnumProperty`, recovered by scanning
+  `Properties` since this port has no `GetOrDefault` — the enum member is parsed from the `Enum::Member` FName),
+  then, when up-to-date and not a CDO, a `uint32` `StructFlags` and the default instance (a tagged property list,
+  read via `DeserializePropertiesTagged(..., isStruct:true)`). The `FFrameworkObjectVersion` gate for the default
+  instance is assume-modern (the block is present), guarded by a `Position < validPos` check so older assets
+  without it don't over-read.
 - **The tagged-property system is started** (`UObject` core + the versioned/tagged property path). `UObject`
   reads its properties via `FPropertyTag` (classic pre-UE5 tag layout) → `FPropertyTagData` (type descriptor)
   → `FPropertyTagType::ReadPropertyTagType` (the type→reader factory), then the trailing optional `ObjectGuid`.
@@ -205,8 +313,15 @@ These are noted inline in the headers where they occur:
   `FSoftObjectPath` ports only the **classic** read path (asset FName + sub-path FString) — the pre-
   `ADDED_SOFT_OBJECT_PATH` string form, the UE5 `ADD_SOFTOBJECTPATH_LIST` package-table index, the
   `FSOFTOBJECTPATH_REMOVE_ASSET_PATH_FNAMES` `FTopLevelAssetPath` form, the `FFortniteMainBranchObjectVersion`
-  UTF-8 sub-path gate, and the AshesOfCreation/OuterWorlds2/DragonQuestXI game readers are deferred, as is the
-  `Load`/`TryLoad` family (needs `IFileProvider`). `SoftObjectProperty`/`LazyObjectProperty` derive
+  UTF-8 sub-path gate, and the AshesOfCreation/OuterWorlds2/DragonQuestXI game readers are deferred. The
+  **`FSoftObjectPath::Load`/`TryLoad` family is now ported** (sync only): `Load(provider)`/`TryLoad(provider, out)`
+  resolve `AssetPathName` through `IFileProvider::LoadPackageObject`, the no-arg `Load()`/`TryLoad(out)` pull the
+  provider from `Owner->GetProvider()`, the typed `Load<T>`/`TryLoad<T>` `dynamic_cast` the result, and
+  `TryResolveSubObject` walks the `'.'`-separated `SubPathString` via `IPackage::GetExportOrNull` (this is what
+  motivated wiring `UObject::Owner`, set in `Package::GetExportObject`). C#'s async `LoadAsync`/`TryLoadAsync`
+  have no C++ `Task` equivalent and are omitted; C#'s `Load(provider)` throws on a missing package while this
+  port's `LoadPackageObject` returns null, so `Load(provider)` returns null on a miss (typed `Load<T>` still
+  throws on a null/wrong-type result). `SoftObjectProperty`/`LazyObjectProperty` derive
   `FPropertyTagType` directly (aggregate-style) and override `ToString`; `ObjectProperty::ToString` now uses a
   virtual `TypeName()` so the `Weak`/`Class` subclasses print their own name (mirroring C#'s `GetType().Name`).
   All `TODO`.
@@ -231,9 +346,10 @@ These are noted inline in the headers where they occur:
   `ArgumentFormat`, `FormatNumber`, `AsDate`, `AsTime`, `AsDateTime`, `Transform`, `StringTableEntry`,
   `TextGenerator`), with the `FFormatArgumentValue` / `FFormatArgumentData` / `FNumberFormattingOptions` helper
   structs. `OptionalProperty` reads a presence bool then (if present) the inner property via the factory with the
-  `OPTIONAL` read type. Deliberate differences: provider localization is deferred (no `IFileProvider`), so
-  `Base`/`StringTableEntry` read their source/key fields but `LocalizedString` stays empty (as C# does without a
-  provider) and the `UStringTable` load is skipped; the many custom-version gates
+  `OPTIONAL` read type. Deliberate differences: `Base` localization now resolves through the provider (see the
+  `IFileProvider` bullet); `StringTableEntry` now resolves too — it loads the `UStringTable` at its `TableId`
+  via `provider->TryLoadPackageObject<UStringTable>`, takes the table entry for its `Key` as `SourceString`,
+  and localizes it through the provider (see the `ObjectTypeRegistry` bullet); the many custom-version gates
   (`FEditorObjectVersion`/`FFortniteMainBranchObjectVersion`/`FUE5ReleaseStreamObjectVersion`) aren't ported, so
   the port takes their **modern** outcome at each site (documented inline); the game-specific quirks
   (Splitgate2/DeltaForce/HonorofKingsWorld/EmbersOfTheUncrowned) are omitted; `FFormatArgumentValue`'s C# boxed
@@ -241,16 +357,36 @@ These are noted inline in the headers where they occur:
   directly and `OptionalProperty` holds a `unique_ptr` to the inner value (null when absent, matching C#'s
   empty-string `ToString`). `OptionalProperty` passes `nullptr` for the inner tag's `InnerTypeData` (deferred
   with `FPropertyTagData`). All `TODO`.
+- **Lazy export object loading is ported** (`Package::GetExportObject` + `ConstructObject`/`DeserializeObject`,
+  `IPackage::GetExportObject`, `ResolvedObject::Object`/`Load<T>`). Each export is constructed and deserialized on
+  first access and cached in `Package::ExportsLazy` (parallel to `ExportMap`): a base `UObject` is built, its
+  `Name`/`Outer`/`Super`/`Template`/`Class` resolved from the export record (`Outer` falling back to the package
+  itself), then its serial range is re-read from the export archive (`.uexp`, or the `.uasset` when there is no
+  `.uexp`) and its tagged properties deserialized. `ResolvedObject::Object()` returns the package's lazy export,
+  so `Load<T>()` (a `dynamic_cast`) and `FPackageIndex` references now resolve to a real object. Deliberate
+  differences: only the **lazy** (`useLazySerialization`) path is ported — the dependency-graph `ExportLoader`
+  path (`useLazySerialization == false`, walking `PreloadDependencies` through Create/Serialize phases) is not.
+  `ConstructObject` is **simplified to always build a base `UObject`** (C#'s `default:` path): the `UStruct`/
+  `UClass` traversal that would pick a code-defined class is deferred with those export types. A serialization
+  failure is swallowed (C# logs it / rethrows only under `FatalObjectSerializationErrors`; there is no logging
+  framework here). The `ubulk`/`uptnl` payloads and the `PostLoad` bodies of concrete exports are deferred. The
+  archives passed to `Package` must outlive it (their bytes are re-read lazily). All `TODO`.
 - **Namespace-shadowing note:** introducing `CUE4Parse::UE4::Assets::Objects` (for the property types) means a
   bare `Objects::UObject::X` written *inside* `namespace …::Assets` now resolves to `Assets::Objects`, not
   `UE4::Objects`. Such references (in `IPackage`, `FAssetArchive`, `Package`, `ResolvedObject`) are now fully
   qualified as `CUE4Parse::UE4::Objects::UObject::X`.
-- **Not yet ported** (arrive with their layers): the unversioned-property path + mappings provider, deferred
-  object **loading** (so `ResolvedObject.Object`/`Load<T>` and the localization/`UStringTable` resolution behind
-  `FText`/soft references can work), the custom-version providers (`FEditorObjectVersion` etc.; property readers
-  currently assume modern), game-specific property readers (Borderlands4/OuterWorlds2/…), the named-struct table
-  in `FScriptStruct` (needs Core/Math + engine structs), concrete `UExport` subclasses, `IoPackage` (IO Store),
-  `IFileProvider`, and `VersionContainer` Options/MapStructTypes tables. Marked with `TODO` at their sites.
+- **Not yet ported** (arrive with their layers): the unversioned-property path + mappings provider, the
+  dependency-graph `ExportLoader` (non-lazy) loading path, the concrete `IFileProvider` (`DefaultFileProvider`
+  + the VFS/`GameFile` layer; only a minimal in-memory-testable interface exists) with its `.locres`
+  localization loading (`FTextLocalizationResource`), the full `UStruct`/`UClass`-aware `ConstructObject`
+  traversal (a name-keyed `ObjectTypeRegistry` stands in for it), the custom-version providers
+  (`FEditorObjectVersion` etc.; property readers currently assume modern), game-specific property readers
+  (Borderlands4/OuterWorlds2/…), the named-struct table in `FScriptStruct` (needs Core/Math + engine structs),
+  further concrete `UExport` subclasses (`UStringTable`, `UDataTable`, `UCurveTable`, `UScriptStruct`, `UEnum`,
+  `UFunction`, `UObjectRedirector`, `UBlueprintGeneratedClass`, `UUserDefinedStruct`, `UUserDefinedEnum`,
+  `UCurveFloat`/`UCurveVector`/`UCurveLinearColor` so far; `UStruct`/`UClass`/`UCurveBase` ported but unregistered),
+  `IoPackage` (IO Store), and
+  `VersionContainer` Options/MapStructTypes tables. Marked with `TODO` at their sites.
 
 ## Build
 

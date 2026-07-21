@@ -3,9 +3,10 @@
 // helper structs. Read from an FAssetArchive.
 //
 // Deliberate differences from C#:
-//   * Provider localization is deferred (no IFileProvider): FTextHistory::Base and StringTableEntry read their
-//     source/key fields but LocalizedString stays empty (C# yields "" without a provider too). StringTableEntry's
-//     UStringTable load is skipped.
+//   * Both FTextHistory::Base and StringTableEntry resolve through the owning package's provider (as in C#;
+//     empty without a provider): Base looks its namespace/key up in Internationalization; StringTableEntry
+//     loads the UStringTable at TableId (provider->TryLoadPackageObject<UStringTable>), reads the entry for
+//     Key as SourceString, then localizes it.
 //   * Custom-version gates (FEditorObjectVersion / FFortniteMainBranchObjectVersion / FUE5ReleaseStreamObjectVersion)
 //     aren't ported, so the port assumes modern assets and takes their modern outcome (documented at each site).
 //   * Game-specific quirks (Splitgate2 / DeltaForce / HonorofKingsWorld / EmbersOfTheUncrowned) are omitted. TODO.

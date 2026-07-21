@@ -1,12 +1,16 @@
 // Ported from CUE4Parse/Utils/MathUtils.cs
 //
 // Only the scalar helpers are ported here. The FVector/FVector2D/FVector4/FQuat <-> System.Numerics
-// conversions and CubicCurve2D (which needs UnrealMath.IsNearlyZero) arrive with the Core/Math layer.
+// conversions arrive with the Core/Math layer. CubicCurve2D (a self-contained cubic-root solver used by the
+// weighted rich-curve evaluation) is ported below now that UnrealMath.IsNearlyZero exists.
 // C# extension methods become free functions in this namespace.
 #pragma once
 
+#include <cmath>
 #include <cstdint>
 #include <cstring>
+
+#include "../UE4/Objects/Core/Math/UnrealMathUtility.h"
 
 namespace CUE4Parse::Utils
 {
@@ -80,4 +84,73 @@ namespace CUE4Parse::Utils
         std::memcpy(&next, &bits, sizeof(next));   // BitConverter.Int64BitsToDouble
         return next - value;
     }
+
+    // Ported from CubicCurve2D in MathUtils.cs. Solves coeff[3]*x^3 + coeff[2]*x^2 + coeff[1]*x + coeff[0] = 0.
+    // Writes up to 3 roots into `solution` (must have room for 3) and returns the number of real roots found.
+    struct CubicCurve2D
+    {
+        static double Cbrt(double x)
+        {
+            return x > 0.0 ? std::pow(x, 1.0 / 3.0) : x < 0.0 ? -std::pow(-x, 1.0 / 3.0) : 0.0;
+        }
+
+        static int SolveCubic(const double coeff[4], double solution[3])
+        {
+            namespace UM = CUE4Parse::UE4::Objects::Core::Math::UnrealMath;
+
+            int numSolutions;
+            const double a = coeff[2] / coeff[3];
+            const double b = coeff[1] / coeff[3];
+            const double c = coeff[0] / coeff[3];
+
+            const double sqOfA = a * a;
+            const double p = 1.0 / 3 * (-1.0 / 3 * sqOfA + b);
+            const double q = 1.0 / 2 * (2.0 / 27 * a * sqOfA - 1.0 / 3 * a * b + c);
+
+            const double cubeOfP = p * p * p;
+            const double d = q * q + cubeOfP;
+
+            if (UM::IsNearlyZero(d))
+            {
+                if (UM::IsNearlyZero(q)) // one triple solution
+                {
+                    solution[0] = 0;
+                    numSolutions = 1;
+                }
+                else // one single and one double solution
+                {
+                    const double u = Cbrt(-q);
+                    solution[0] = 2 * u;
+                    solution[1] = -u;
+                    numSolutions = 2;
+                }
+            }
+            else if (d < 0) // Casus irreducibilis: three real solutions
+            {
+                constexpr double PI = 3.14159265358979323846; // C# Math.PI (double)
+                const double phi = 1.0 / 3 * std::acos(-q / std::sqrt(-cubeOfP));
+                const double t = 2 * std::sqrt(-p);
+
+                solution[0] = t * std::cos(phi);
+                solution[1] = -t * std::cos(phi + PI / 3);
+                solution[2] = -t * std::cos(phi - PI / 3);
+                numSolutions = 3;
+            }
+            else // one real solution
+            {
+                const double sqrtD = std::sqrt(d);
+                const double u = Cbrt(sqrtD - q);
+                const double v = -Cbrt(sqrtD + q);
+
+                solution[0] = u + v;
+                numSolutions = 1;
+            }
+
+            const double sub = 1.0 / 3 * a;
+            for (int i = 0; i < numSolutions; ++i)
+                solution[i] -= sub;
+
+            return numSolutions;
+        }
+    };
 }

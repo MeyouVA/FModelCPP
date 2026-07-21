@@ -57,3 +57,43 @@ add_test(NAME test_delegate_properties COMMAND test_delegate_properties)
 add_executable(test_text_properties test_text_properties.cpp)
 target_link_libraries(test_text_properties PRIVATE CUE4Parse)
 add_test(NAME test_text_properties COMMAND test_text_properties)
+
+add_executable(test_package_loading test_package_loading.cpp)
+target_link_libraries(test_package_loading PRIVATE CUE4Parse)
+add_test(NAME test_package_loading COMMAND test_package_loading)
+
+add_executable(test_file_provider test_file_provider.cpp)
+target_link_libraries(test_file_provider PRIVATE CUE4Parse)
+add_test(NAME test_file_provider COMMAND test_file_provider)
+
+add_executable(test_string_table test_string_table.cpp)
+target_link_libraries(test_string_table PRIVATE CUE4Parse)
+add_test(NAME test_string_table COMMAND test_string_table)
+
+add_executable(test_datatable test_datatable.cpp)
+target_link_libraries(test_datatable PRIVATE CUE4Parse)
+add_test(NAME test_datatable COMMAND test_datatable)
+
+add_executable(test_type_system test_type_system.cpp)
+target_link_libraries(test_type_system PRIVATE CUE4Parse)
+add_test(NAME test_type_system COMMAND test_type_system)
+
+add_executable(test_redirector_bpgc test_redirector_bpgc.cpp)
+target_link_libraries(test_redirector_bpgc PRIVATE CUE4Parse)
+add_test(NAME test_redirector_bpgc COMMAND test_redirector_bpgc)
+
+add_executable(test_soft_object_load test_soft_object_load.cpp)
+target_link_libraries(test_soft_object_load PRIVATE CUE4Parse)
+add_test(NAME test_soft_object_load COMMAND test_soft_object_load)
+
+add_executable(test_userdefined test_userdefined.cpp)
+target_link_libraries(test_userdefined PRIVATE CUE4Parse)
+add_test(NAME test_userdefined COMMAND test_userdefined)
+
+add_executable(test_curvetable test_curvetable.cpp)
+target_link_libraries(test_curvetable PRIVATE CUE4Parse)
+add_test(NAME test_curvetable COMMAND test_curvetable)
+
+add_executable(test_curveassets test_curveassets.cpp)
+target_link_libraries(test_curveassets PRIVATE CUE4Parse)
+add_test(NAME test_curveassets COMMAND test_curveassets)
