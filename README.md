@@ -189,6 +189,8 @@ foundation** everything else builds on:
 | UUserDefinedStruct / UUserDefinedEnum | `UE4/Objects/Engine/UUserDefined{Struct,Enum}.cs` | `UE4/Objects/Engine/UUserDefined{Struct,Enum}.{h,cpp}` |
 | Reflection flag enums | `UE4/Objects/UObject/{EStructFlags,EClassFlags,EFunctionFlags}.cs` | `UE4/Objects/UObject/{EStructFlags,EClassFlags,EFunctionFlags}.h` + `CoreNetTypes.h` |
 | Provider object loading | `FileProvider/AbstractFileProvider.cs` (`LoadPackageObject`) | `FileProvider/IFileProvider.{h,cpp}` (`LoadPackageObject`/`TryLoadPackageObject<T>`) |
+| Provider stack | `FileProvider/{AbstractFileProvider,DefaultFileProvider}.cs`, `FileProvider/Vfs/{IVfsFileProvider,AbstractVfsFileProvider,FileProviderDictionary}.cs`, `FileProvider/Objects/{VersionedGameFile,OsGameFile}.cs`, `UE4/VirtualFileSystem/AesVfsReaderForProvider.cs` | same paths under `FileProvider/` and `UE4/VirtualFileSystem/` |
+| IO Store container | `UE4/IO/IoStoreReader.cs`, `UE4/IO/Objects/{FIoStoreTocResource,FIoStoreTocHeader,FIoStoreTocCompressedBlockEntry,FIoStoreTocEntryMeta,FIoChunkId,FIoOffsetAndLength,FIoDirectoryIndexEntry,FIoFileIndexEntry,FIoStoreEntry,FIoContainerId,FPackageId,FIoStatus}.cs` | same paths under `UE4/IO/` |
 
 ## Deliberate differences from C#
 
@@ -295,6 +297,29 @@ These are noted inline in the headers where they occur:
 - **`Files` maps to `std::map<std::string, std::shared_ptr<GameFile>, StringComparer>`.** `shared_ptr` is not
   incidental: the updated pak index deliberately aliases one non-encoded entry under several paths, and the
   last write wins on its `Path` — a C# behaviour the port has to keep.
+- **`FileProviderDictionary` copies each mounted index instead of referencing it.** C#'s `ConcurrentBag` holds
+  references to each reader's live dictionary and the GC pins them; nothing does in C++, so `AddFiles` copies
+  the map (cheap — the entries are `shared_ptr` and stay shared with the reader). Lookup order is C#'s
+  descending-readOrder scan, with a deterministic tie-break (earliest-added index wins) inside behaviour C#
+  leaves unspecified.
+- **The provider owns loaded packages.** C#'s `LoadPackage` returns a fresh GC-managed package per call whose
+  archives the GC keeps alive; the C++ `Package` requires its archives to outlive it, so
+  `AbstractFileProvider` caches `{uasset archive, uexp archive, package}` by game-file path and hands out
+  non-owning pointers valid for the provider's lifetime.
+- **`AbstractVfsFileProvider` starts with `CustomEncryption` null for every game.** C#'s constructor wires
+  ~30 per-game decryptors from `CUE4Parse.GameTypes` (all unported). This is an explicit gap, not silent
+  corruption: an encrypted archive for such a game fails the mount-point probe and never mounts, rather than
+  decrypting to wrong bytes. Mount/SubmitKeys also run serially — C# fans them out on `Task.Run`; the port
+  has no threading layer. Deferred with their layers: `PostMount`/`LoadIniConfigs` (config-ini),
+  `GameDisplayName`, `LoadVirtualPaths` (plugin-manifest JSON), localization beyond the lookup table, and
+  `IoGlobalData`/`VerifyGlobalData` (Zen).
+- **The IO Store container layer is ported; the Zen asset layer on top of it is not.** `IoStoreReader` mounts,
+  resolves chunks (perfect-hash with overflow fallback included, comparing `GetHashCode`s exactly as C# does),
+  splits partitioned `.ucas` sets and extracts through the block loop — but `FIoContainerHeader`,
+  `IoGlobalData` and `IoPackage` belong to the Zen asset format and are deferred; `ContainerHeader()` and
+  `LoadPackage` on an `FIoStoreEntry` throw naming that gap. The TheFinals/ArcRaiders and NFS Mobile toc
+  obfuscation IS ported (self-contained hardcoded-key AES, not GameTypes); eBaseballProSpirit extraction
+  throws (needs GameTypes' trailer arithmetic).
 - **Some Utils are partial ports.** `MathUtils` ports the scalar helpers only (the `FVector`/`FQuat`
   conversions and `CubicCurve2D` wait on the Core/Math layer). `StringUtils` ports the ordinal
   substring helpers (culture-aware `StringComparison` overloads and the `Span<char>` overload have

@@ -13,16 +13,17 @@ namespace CUE4Parse::UE4::Assets::Objects
 
     UScriptSet::UScriptSet(FAssetArchive& Ar, const FPropertyTagData* tagData, ReadType readType)
     {
-        // Game-specific InnerType / InnerTypeData inference is deferred.
+        // Game-specific InnerType inference is deferred; the mappings-built InnerTypeData flows through.
         if (tagData == nullptr || !tagData->InnerType.has_value())
             throw Exceptions::ParserException(Ar, "UScriptSet needs inner type");
         const std::string& innerType = *tagData->InnerType;
+        const FPropertyTagData* innerTypeData = tagData->InnerTypeData.get();
 
         if (readType != ReadType::RAW)
         {
             const int numElementsToRemove = Ar.Read<int32_t>();
             for (int i = 0; i < numElementsToRemove; i++)
-                FPropertyTagType::ReadPropertyTagType(Ar, innerType, nullptr, ReadType::ARRAY);
+                FPropertyTagType::ReadPropertyTagType(Ar, innerType, innerTypeData, ReadType::ARRAY);
         }
 
         const ReadType type = readType == ReadType::RAW ? ReadType::RAW : ReadType::ARRAY;
@@ -30,7 +31,7 @@ namespace CUE4Parse::UE4::Assets::Objects
         Properties.reserve(static_cast<size_t>(num));
         for (int i = 0; i < num; i++)
         {
-            auto property = FPropertyTagType::ReadPropertyTagType(Ar, innerType, nullptr, type);
+            auto property = FPropertyTagType::ReadPropertyTagType(Ar, innerType, innerTypeData, type);
             if (property)
                 Properties.push_back(std::move(property));
         }

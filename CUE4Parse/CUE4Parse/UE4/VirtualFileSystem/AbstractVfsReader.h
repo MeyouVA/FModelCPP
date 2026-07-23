@@ -5,20 +5,25 @@
 //     C# implementation backs it with a plain field anyway, and an abstract property buys nothing in C++.
 //   * The Serilog warnings are dropped (the port has no logging layer), as is Globals.LogVfsMounts which
 //     only ever gated them.
-//   * MountTo (AesVfsReaderForProvider.cs) is not ported: it writes into FileProviderDictionary, which
-//     belongs to the unported FileProvider/Vfs layer. TODO with that layer.
 //   * The static Write(char[], ...) span helpers are IoStore-only and arrive with that reader. TODO.
+//   * C#'s EventHandler<int> callbacks become a single std::function (no multicast).
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <vector>
 
 #include "IVfsReader.h"
 #include "../Readers/FArchive.h"
 
+namespace CUE4Parse::FileProvider::Vfs { class FileProviderDictionary; }
+
 namespace CUE4Parse::UE4::VirtualFileSystem
 {
+    // C#'s EventHandler<int> as used by the provider events: (sender reader, count).
+    using VfsEventHandler = std::function<void(IVfsReader&, int)>;
+
     class AbstractVfsReader : public virtual IVfsReader
     {
     public:
@@ -45,6 +50,11 @@ namespace CUE4Parse::UE4::VirtualFileSystem
         // decide whether an AES key is the right one before committing to it.
         static bool IsValidIndex(const std::vector<uint8_t>& testBytes);
         static bool IsValidIndex(Readers::FArchive& reader);
+
+        // From AesVfsReaderForProvider.cs: mounts and registers this reader's files with the provider's
+        // dictionary. Defined in AesVfsReaderForProvider.cpp.
+        void MountTo(FileProvider::Vfs::FileProviderDictionary& files, const Utils::StringComparer& pathComparer,
+                     const VfsEventHandler& vfsMounted = nullptr);
 
     protected:
         AbstractVfsReader(std::string path, Versions::VersionContainer versions);

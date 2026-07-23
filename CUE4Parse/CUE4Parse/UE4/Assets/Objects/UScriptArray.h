@@ -3,9 +3,10 @@
 // descriptor used to read each element.
 //
 // Deliberate differences from C#:
-//   * The InnerTypeData paths (unversioned / RAW / pre-UE4 / UE5 complete-type-name) are deferred with the
-//     mappings + UE5 type-name layers, so struct-array inner descriptors only come from the classic
-//     INNER_ARRAY_TAG_INFO inline tag. The DaysGone struct-array size heuristic is omitted. TODO.
+//   * InnerTagData is a shared_ptr: on the unversioned/RAW path it shares the tag's mappings-built
+//     InnerTypeData (as C# shares the reference); on the classic INNER_ARRAY_TAG_INFO path it takes
+//     ownership of the inline tag's data. The UE5 complete-type-name path is still deferred, and the
+//     DaysGone struct-array size heuristic is omitted. TODO.
 #pragma once
 
 #include <cstdint>
@@ -24,7 +25,7 @@ namespace CUE4Parse::UE4::Assets::Objects
     {
     public:
         std::string InnerType;
-        std::unique_ptr<FPropertyTagData> InnerTagData;
+        std::shared_ptr<FPropertyTagData> InnerTagData;
         std::vector<std::unique_ptr<Properties::FPropertyTagType>> Properties;
 
         explicit UScriptArray(std::string innerType);

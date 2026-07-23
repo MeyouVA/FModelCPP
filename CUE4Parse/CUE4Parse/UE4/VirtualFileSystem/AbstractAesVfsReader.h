@@ -29,6 +29,12 @@ namespace CUE4Parse::UE4::VirtualFileSystem
             return !IsEncrypted() || TestAesKey(MountPointCheckBytes(), key);
         }
 
+        // From AesVfsReaderForProvider.cs: sets the key, then mounts into the provider's dictionary.
+        // Defined in AesVfsReaderForProvider.cpp. The using keeps the keyless base overload visible.
+        using AbstractVfsReader::MountTo;
+        void MountTo(FileProvider::Vfs::FileProviderDictionary& files, const Utils::StringComparer& pathComparer,
+                     std::shared_ptr<Encryption::Aes::FAesKey> key, const VfsEventHandler& vfsMounted = nullptr);
+
     protected:
         AbstractAesVfsReader(std::string path, Versions::VersionContainer versions)
             : AbstractVfsReader(std::move(path), std::move(versions)) {}

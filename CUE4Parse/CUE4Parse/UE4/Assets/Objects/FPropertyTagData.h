@@ -3,18 +3,21 @@
 // the tag (struct type/guid, bool value, enum name, container inner/value types).
 //
 // Deliberate differences from C#:
-//   * The UStruct?/UEnum? back-references (Struct/Enum) and the nested InnerTypeData/ValueTypeData are only
-//     produced by the mappings-based and UE5 complete-type-name constructors, which are deferred; those
-//     members/ctors are omitted for now. TODO.
-//   * The Span<FPropertyTypeNameNode> (UE5 PROPERTY_TAG_COMPLETE_TYPE_NAME) and PropertyType-mapping ctors
-//     are deferred; only the classic FAssetArchive ctor and the simple string ctors are ported.
+//   * The Span<FPropertyTypeNameNode> ctor (UE5 PROPERTY_TAG_COMPLETE_TYPE_NAME) is deferred; the classic
+//     FAssetArchive ctor, the simple string ctors and the mappings (PropertyType) ctor are ported.
+//   * The nested InnerTypeData/ValueTypeData are shared_ptrs (C# shares references under GC; a cloned
+//     PropertyInfo shares its MappingType, so the descriptors built from it are shared too).
+//   * The UStruct/UEnum back-references are non-owning pointers into provider-owned packages.
 #pragma once
 
+#include <memory>
 #include <optional>
 #include <string>
 
 #include "../../Objects/Core/Misc/FGuid.h"
 
+namespace CUE4Parse::MappingsProvider { class PropertyType; }
+namespace CUE4Parse::UE4::Objects::UObject { class UStruct; class UEnum; }
 namespace CUE4Parse::UE4::Assets::Readers { class FAssetArchive; }
 
 namespace CUE4Parse::UE4::Assets::Objects
@@ -32,6 +35,10 @@ namespace CUE4Parse::UE4::Assets::Objects
         std::optional<std::string> EnumName;
         std::optional<std::string> InnerType;
         std::optional<std::string> ValueType;
+        std::shared_ptr<FPropertyTagData> InnerTypeData;
+        std::shared_ptr<FPropertyTagData> ValueTypeData;
+        const UE4::Objects::UObject::UStruct* Struct = nullptr;
+        const UE4::Objects::UObject::UEnum* Enum = nullptr;
 
         FPropertyTagData() = default;
         // Reads the type-specific tail of a property tag (classic, non-unversioned path).
@@ -39,6 +46,8 @@ namespace CUE4Parse::UE4::Assets::Objects
         // StructProperty descriptor from a known struct type.
         explicit FPropertyTagData(const std::string& structType, const std::string& name = "")
             : Name(name), Type("StructProperty"), StructType(structType) {}
+        // Descriptor derived from a mappings PropertyType (unversioned path). Defined in the .cpp.
+        explicit FPropertyTagData(const MappingsProvider::PropertyType& info);
 
         std::string ToString() const;
     };

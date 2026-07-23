@@ -4,10 +4,38 @@
 #include "../Readers/FAssetArchive.h"
 #include "../../Versions/ObjectVersion.h"
 #include "../../Exceptions/ParserException.h"
+#include "../../../MappingsProvider/MappingsSchema.h"
 
 namespace CUE4Parse::UE4::Assets::Objects
 {
     using namespace CUE4Parse::UE4::Versions;
+
+    FPropertyTag::FPropertyTag(Readers::FAssetArchive& Ar, const MappingsProvider::PropertyInfo& info,
+                               Properties::ReadType type)
+    {
+        Name = FName(info.Name);
+        PropertyType = FName(info.MappingType->Type);
+        ArrayIndex = info.Index;
+        ArraySize = info.ArraySize;
+        TagData = std::make_unique<FPropertyTagData>(*info.MappingType);
+        HasPropertyGuid = false;
+        PropertyGuid = std::nullopt;
+        PropertyTagFlags = ArraySize.value_or(0) > 1 ? PTF_HasArrayIndex : PTF_None;
+
+        const int64_t pos = Ar.Position;
+        try
+        {
+            Tag = FPropertyTagType::ReadPropertyTagType(Ar, PropertyType.Text(), TagData.get(), type);
+        }
+        catch (const Exceptions::ParserException& e)
+        {
+            throw Exceptions::ParserException(
+                "Failed to read FPropertyTagType " + (TagData ? TagData->ToString() : PropertyType.Text()) +
+                " " + Name.Text() + ": " + e.what());
+        }
+
+        Size = static_cast<int>(Ar.Position - pos);
+    }
 
     FPropertyTag::FPropertyTag(Readers::FAssetArchive& Ar, bool readData)
     {

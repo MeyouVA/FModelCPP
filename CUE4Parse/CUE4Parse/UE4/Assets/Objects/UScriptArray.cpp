@@ -32,7 +32,7 @@ namespace CUE4Parse::UE4::Assets::Objects
 
         if (Ar.HasUnversionedProperties() || type == ReadType::RAW || Ar.Game() < GAME_UE4_0)
         {
-            // C# uses tagData.InnerTypeData here (mappings / raw path) — deferred. TODO.
+            InnerTagData = tagData->InnerTypeData;
         }
         else if (Ar.Ver() >= EUnrealEngineObjectUE5Version::PROPERTY_TAG_COMPLETE_TYPE_NAME && InnerType == "StructProperty")
         {

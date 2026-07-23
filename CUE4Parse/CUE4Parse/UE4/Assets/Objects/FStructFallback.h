@@ -3,8 +3,8 @@
 // C++ reader). Doubles as the property holder for tagged struct data. Implements IUStruct.
 //
 // Deliberate differences from C#:
-//   * Only the *tagged* (versioned) path is ported. The unversioned ctor (DeserializePropertiesUnversioned,
-//     needs a mappings provider) and the raw-header ctor (DeserializeRawProperties) throw / are omitted. TODO.
+//   * Tagged AND unversioned paths are ported (the unversioned one builds a stack UScriptClass over
+//     structType, as C# news one up). The raw-header ctor (DeserializeRawProperties) is omitted. TODO.
 //   * The reflection-based property accessors on AbstractPropertyHolder are omitted; consumers read the
 //     Properties vector directly (mirrors the note on UObject).
 #pragma once
@@ -17,6 +17,7 @@
 #include "../../IUStruct.h"
 
 namespace CUE4Parse::UE4::Assets::Readers { class FAssetArchive; }
+namespace CUE4Parse::UE4::Objects::UObject { class UStruct; }
 
 namespace CUE4Parse::UE4::Assets::Objects
 {
@@ -28,8 +29,11 @@ namespace CUE4Parse::UE4::Assets::Objects
         std::vector<FPropertyTag> Properties;
 
         FStructFallback() = default;
-        // Reads tagged struct properties. structType is only consulted on the (deferred) unversioned path.
+        // Reads struct properties: unversioned (via structType's mappings schema) when the package has
+        // unversioned properties, tagged otherwise.
         explicit FStructFallback(Readers::FAssetArchive& Ar, const std::optional<std::string>& structType = std::nullopt);
+        // C#'s FStructFallback(Ar, UStruct?) overload (unversioned via a loaded struct's schema).
+        FStructFallback(Readers::FAssetArchive& Ar, const CUE4Parse::UE4::Objects::UObject::UStruct* structType);
 
         // Move-only (FPropertyTag is move-only).
         FStructFallback(FStructFallback&&) = default;

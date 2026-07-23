@@ -3,6 +3,7 @@
 
 #include "../Readers/FAssetArchive.h"
 #include "../../Versions/ObjectVersion.h"
+#include "../../../MappingsProvider/MappingsSchema.h"
 
 namespace CUE4Parse::UE4::Assets::Objects
 {
@@ -48,6 +49,18 @@ namespace CUE4Parse::UE4::Assets::Objects
         {
             InnerType = Ar.ReadFName().Text();
         }
+    }
+
+    FPropertyTagData::FPropertyTagData(const MappingsProvider::PropertyType& info)
+        : Type(info.Type), StructType(info.StructType), EnumName(info.EnumName),
+          Struct(info.Struct), Enum(info.Enum)
+    {
+        StructGuid = std::nullopt;
+        Bool = info.Bool;
+        InnerTypeData = info.InnerType ? std::make_shared<FPropertyTagData>(*info.InnerType) : nullptr;
+        InnerType = InnerTypeData ? std::optional<std::string>(InnerTypeData->Type) : std::nullopt;
+        ValueTypeData = info.ValueType ? std::make_shared<FPropertyTagData>(*info.ValueType) : nullptr;
+        ValueType = ValueTypeData ? std::optional<std::string>(ValueTypeData->Type) : std::nullopt;
     }
 
     std::string FPropertyTagData::ToString() const

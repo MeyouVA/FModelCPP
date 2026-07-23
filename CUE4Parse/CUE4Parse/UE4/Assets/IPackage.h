@@ -13,6 +13,7 @@
 #include "../Objects/UObject/FNameEntrySerialized.h"
 #include "../Objects/UObject/EPackageFlags.h"
 
+namespace CUE4Parse::MappingsProvider { class TypeMappings; }
 namespace CUE4Parse::UE4::Objects::UObject { class FPackageIndex; }
 namespace CUE4Parse::UE4::Assets::Exports { class UObject; }
 namespace CUE4Parse::FileProvider { class IFileProvider; }
@@ -59,5 +60,9 @@ namespace CUE4Parse::UE4::Assets
         // The file provider this package was loaded through (C#'s IPackage.Provider), or null. Non-pure for
         // the same reason as GetExportObject.
         virtual CUE4Parse::FileProvider::IFileProvider* GetProvider() const { return nullptr; }
+
+        // C#'s IPackage.Mappings (=> Provider?.MappingsForGame): the type mappings used for unversioned
+        // property serialization, or null. Defined in IPackage.cpp (needs IFileProvider).
+        virtual const CUE4Parse::MappingsProvider::TypeMappings* Mappings() const;
     };
 }

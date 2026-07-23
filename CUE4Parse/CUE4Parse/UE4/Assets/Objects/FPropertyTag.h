@@ -5,8 +5,8 @@
 // Deliberate differences from C#:
 //   * Only the classic (pre-UE5 PROPERTY_TAG_COMPLETE_TYPE_NAME) tag layout is read; the UE5 complete-type-
 //     name path (FPropertyTypeNameNode nodes) throws for now. TODO.
-//   * The mappings-based ctor FPropertyTag(Ar, PropertyInfo, ReadType) and the blueprint-decompiler helper
-//     are omitted until those layers are ported.
+//   * The blueprint-decompiler helper is omitted until that layer is ported. The mappings-based ctor
+//     FPropertyTag(Ar, PropertyInfo, ReadType) IS ported (unversioned path).
 #pragma once
 
 #include <cstdint>
@@ -19,6 +19,7 @@
 #include "../../Objects/UObject/FName.h"
 #include "../../Objects/Core/Misc/FGuid.h"
 
+namespace CUE4Parse::MappingsProvider { class PropertyInfo; }
 namespace CUE4Parse::UE4::Assets::Readers { class FAssetArchive; }
 
 namespace CUE4Parse::UE4::Assets::Objects
@@ -54,6 +55,7 @@ namespace CUE4Parse::UE4::Assets::Objects
         FName PropertyType;
         int Size = 0;
         int ArrayIndex = 0;
+        std::optional<int> ArraySize;
         std::unique_ptr<FPropertyTagData> TagData;
         bool HasPropertyGuid = false;
         std::optional<FGuid> PropertyGuid;
@@ -63,6 +65,9 @@ namespace CUE4Parse::UE4::Assets::Objects
         FPropertyTag() = default;
         // Reads a tagged property from the stream. If readData is true, also parses the value into Tag.
         FPropertyTag(Readers::FAssetArchive& Ar, bool readData);
+        // Builds a tag from a mappings PropertyInfo and reads its value (unversioned path).
+        FPropertyTag(Readers::FAssetArchive& Ar, const MappingsProvider::PropertyInfo& info,
+                     Properties::ReadType type);
 
         // Move-only (owns unique_ptrs).
         FPropertyTag(FPropertyTag&&) = default;

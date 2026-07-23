@@ -129,3 +129,11 @@ add_test(NAME test_memory_image COMMAND test_memory_image)
 add_executable(test_pak test_pak.cpp)
 target_link_libraries(test_pak PRIVATE CUE4Parse)
 add_test(NAME test_pak COMMAND test_pak)
+
+add_executable(test_default_file_provider test_default_file_provider.cpp)
+target_link_libraries(test_default_file_provider PRIVATE CUE4Parse)
+add_test(NAME test_default_file_provider COMMAND test_default_file_provider)
+
+add_executable(test_io_store test_io_store.cpp)
+target_link_libraries(test_io_store PRIVATE CUE4Parse)
+add_test(NAME test_io_store COMMAND test_io_store)

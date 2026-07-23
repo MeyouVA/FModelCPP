@@ -11,8 +11,9 @@
 //   * C#'s `bool TryLoadPackage(string, out IPackage)` becomes `IPackage* TryLoadPackage(const string&)`
 //     returning null on failure (no out-params). The provider OWNS the packages it loads (C# leans on GC);
 //     callers keep non-owning pointers, so loaded packages must live as long as the provider.
-//   * No concrete provider is ported yet (DefaultFileProvider needs the VFS/GameFile layer); tests implement
-//     an in-memory one. TODO: AbstractFileProvider/DefaultFileProvider with the VFS arc.
+//   * Concrete providers: AbstractFileProvider (path fixing + load helpers), AbstractVfsFileProvider
+//     (register/mount/key lifecycle) and DefaultFileProvider (directory scan) are ported; tests may still
+//     implement lightweight in-memory ones directly against this interface.
 #pragma once
 
 #include <string>
@@ -20,6 +21,7 @@
 #include "InternationalizationDictionary.h"
 #include "../UE4/Versions/VersionContainer.h"
 
+namespace CUE4Parse::MappingsProvider { class TypeMappings; }
 namespace CUE4Parse::UE4::Assets { class IPackage; }
 namespace CUE4Parse::UE4::Assets::Exports { class UObject; }
 
@@ -37,6 +39,10 @@ namespace CUE4Parse::FileProvider
 
         // The localized-resources table (namespace -> key -> string).
         virtual InternationalizationDictionary& GetInternationalization() = 0;
+
+        // C#'s MappingsForGame (=> MappingsContainer?.MappingsForGame): the type mappings for unversioned
+        // property serialization, or null when no mappings provider is set.
+        virtual const CUE4Parse::MappingsProvider::TypeMappings* MappingsForGame() const { return nullptr; }
 
         // Loads and parses (or returns the cached) package at `path`; null if it cannot be found/parsed.
         virtual UE4::Assets::IPackage* TryLoadPackage(const std::string& path) = 0;

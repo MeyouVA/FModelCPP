@@ -165,9 +165,9 @@
 
   <div class="meters">
     <div class="meter">
-      <div class="top"><span class="name">CUE4Parse — parsing core</span><span class="pct">~50%</span></div>
-      <div class="sub">273 C++ files · 35 test suites green</div>
-      <div class="bar"><span style="width:50%"></span></div>
+      <div class="top"><span class="name">CUE4Parse — parsing core</span><span class="pct">~54%</span></div>
+      <div class="sub">304 C++ files · 37 test suites green</div>
+      <div class="bar"><span style="width:54%"></span></div>
       <p class="note">The bottom-up reading spine is complete through the tagged-property system. Measured against the reading path; by raw file count it's ~11% (the 1,799 C# files are inflated by a huge asset-type + Wwise long tail).</p>
     </div>
     <div class="meter">
@@ -221,9 +221,9 @@
           <ul class="list" style="padding:0; margin:0 -18px;">
             <li><span class="li-mark"><span class="dot done"></span></span><div class="li-body"><div class="li-title">Encryption / AES</div><div class="li-desc"><code>Aes</code> + <code>FAesKey</code> — AES-256 ECB written from scratch (C# gets it from the BCL), pinned to the FIPS-197 and NIST SP 800-38A vectors</div></div></li>
             <li><span class="li-mark"><span class="dot done"></span></span><div class="li-body"><div class="li-title">Pak container</div><div class="li-desc"><code>PakFileReader</code>, <code>FPakEntry</code>, <code>FPakInfo</code> — legacy, updated, flat and frozen indices; compressed + encrypted extraction. Per-game <code>GameTypes</code> hooks throw rather than guess</div></div></li>
-            <li><span class="li-mark"><span class="dot pend"></span></span><div class="li-body"><div class="li-title">IO Store</div><div class="li-desc"><code>.utoc</code>/<code>.ucas</code> — <code>IoStoreReader</code> &amp; friends</div></div><span class="li-count">54</span></li>
-            <li><span class="li-mark"><span class="dot done"></span></span><div class="li-body"><div class="li-title">Virtual file system</div><div class="li-desc"><code>GameFile</code>, <code>VfsEntry</code>, <code>IVfsReader</code>/<code>IAesVfsReader</code> and both abstract readers — only <code>MountTo</code> waits on <code>FileProviderDictionary</code></div></div></li>
-            <li><span class="li-mark"><span class="dot wip"></span></span><div class="li-body"><div class="li-title">FileProvider (concrete)</div><div class="li-desc"><code>DefaultFileProvider</code> — only the interface stub exists</div></div><span class="li-count">~15</span></li>
+            <li><span class="li-mark"><span class="dot done"></span></span><div class="li-body"><div class="li-title">IO Store</div><div class="li-desc"><code>.utoc</code>/<code>.ucas</code> — <code>IoStoreReader</code>, toc resource, chunk resolution (incl. perfect hash), partitioned ucas, directory index. The Zen/IoPackage asset layer is the remaining half</div></div></li>
+            <li><span class="li-mark"><span class="dot done"></span></span><div class="li-body"><div class="li-title">Virtual file system</div><div class="li-desc"><code>GameFile</code>, <code>VfsEntry</code>, <code>IVfsReader</code>/<code>IAesVfsReader</code>, both abstract readers and <code>MountTo</code></div></div></li>
+            <li><span class="li-mark"><span class="dot done"></span></span><div class="li-body"><div class="li-title">FileProvider (concrete)</div><div class="li-desc"><code>DefaultFileProvider</code> — directory scan, register/mount/submit-key lifecycle, <code>FileProviderDictionary</code> read-order shadowing, <code>FixPath</code>. Config-ini + localization surfaces still deferred</div></div></li>
             <li><span class="li-mark"><span class="dot pend"></span></span><div class="li-body"><div class="li-title">Mappings provider</div><div class="li-desc"><code>.usmap</code> — unversioned property parsing</div></div><span class="li-count">~12</span></li>
           </ul>
         </div>
@@ -332,12 +332,12 @@
     <p class="k">Each is a self-contained, testable unit — in the standing bottom-up order. Pick one per "continue".</p>
     <div class="next-grid">
       <div class="next-item">
-        <div class="h"><span class="n">core</span> IO Store</div>
-        <p><code>.utoc</code>/<code>.ucas</code> — the other container format, and the one every UE5 game actually ships. The VFS abstractions it plugs into are now in place, so this is the last thing between the port and a real game directory.</p>
+        <div class="h"><span class="n">core</span> IoPackage (Zen assets)</div>
+        <p>The UE5 asset format that lives inside IO Store: <code>FZenPackageSummary</code>, export bundles, <code>FPackageObjectIndex</code>, script objects + <code>IoGlobalData</code>. The container layer now hands over the bytes; this makes them load as packages.</p>
       </div>
       <div class="next-item">
-        <div class="h"><span class="n">core</span> DefaultFileProvider</div>
-        <p>The concrete provider that scans a game directory, mounts every pak it finds and answers <code>TryLoadPackage</code> — needs <code>FileProviderDictionary</code> and <code>MountTo</code>, the one piece of the VFS layer left over.</p>
+        <div class="h"><span class="n">core</span> Mappings provider</div>
+        <p><code>.usmap</code> — unversioned property parsing. Every UE5 game needs it before exports deserialize; pairs naturally with the Zen work.</p>
       </div>
       <div class="next-item">
         <div class="h"><span class="n">app</span> ApplicationViewModel skeleton</div>
@@ -354,7 +354,7 @@
   <footer>
     <span>U:\Programs\AI\Claude\FModelCPP</span>
     <span>MSVC + Ninja · Qt 6.8.3</span>
-    <span>35 test suites green</span>
+    <span>37 test suites green</span>
     <span>faithful C#→C++ · bottom-up</span>
   </footer>
 </div>

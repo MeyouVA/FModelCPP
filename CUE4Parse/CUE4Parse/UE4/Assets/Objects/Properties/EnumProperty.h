@@ -2,10 +2,9 @@
 // A ByteProperty/EnumProperty value resolved to its enum member name (an FName).
 //
 // Deliberate differences from C#:
-//   * Serialized-UEnum (tagData.Enum) and mappings-based (Ar.Owner.Mappings) index->name resolution are
-//     deferred; IndexToEnum emits "EnumName::index" when an enum name is known. TODO.
-//   * The unversioned/RAW underlying-numeric-property path (which reads InnerTypeData via GenericValue) falls
-//     back to reading a single byte. The Ashes of Creation FAoCDBCReader special case is omitted. TODO.
+//   * Serialized-UEnum (tagData.Enum), mappings-based (Ar.Owner.Mappings) resolution and the unversioned/RAW
+//     underlying-numeric-property path are all ported; an unresolvable index emits "EnumName::index".
+//   * The Ashes of Creation FAoCDBCReader special case is omitted (that reader isn't ported). TODO.
 #pragma once
 
 #include <string>
