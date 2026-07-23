@@ -1,11 +1,12 @@
 #pragma once
 // Ported from FModel/Enums.cs.
 //
-// The plain enums (no attributes, no cross-type dependencies) are ported now as scoped enums.
-// Deferred until the layers that need them arrive:
-//   - EAesReload / EDiscordRpc / ELoadingMode / ECompressedAudio / EIconStyle carry [Description]
-//     attributes used by the Settings UI — they need a description mechanism first.
-//   - EAssetCategory depends on AssetCategoryExtensions.CategoryBase.
+// C#'s [Description] attribute (read by the settings UI through EnumExtensions.GetDescription) has no direct
+// C++ equivalent. It is reproduced here as an overload set: one `description(E)` function per enum, resolved
+// by argument type. The same convention is used for the CUE4Parse-side enums, where it is spelled
+// `Description(E)` and returns const char* so that library stays free of Qt.
+//
+// Still deferred: EAssetCategory, which depends on AssetCategoryExtensions.CategoryBase.
 //
 // statusKindName() reproduces C#'s enum.ToString() (the member name), which FStatus uses to build its label.
 
@@ -68,6 +69,102 @@ namespace FModel
         Decompile,
         Disassemble,
     };
+
+    enum class EAesReload
+    {
+        Always,
+        Never,
+        OncePerDay
+    };
+
+    enum class EDiscordRpc
+    {
+        Always,
+        Never
+    };
+
+    enum class ELoadingMode
+    {
+        Multiple,
+        All,
+        AllButNew,
+        AllButModified,
+        AllButPatched,
+    };
+
+    enum class ECompressedAudio
+    {
+        PlayDecompressed,
+        PlayCompressed
+    };
+
+    enum class EIconStyle
+    {
+        Default,
+        NoBackground,
+        NoText,
+        Flat,
+        Cataba,
+        // CommunityMade — commented out in the C# source too.
+    };
+
+    inline QString description(EAesReload value)
+    {
+        switch (value)
+        {
+            case EAesReload::Always:     return QStringLiteral("Always");
+            case EAesReload::Never:      return QStringLiteral("Never");
+            case EAesReload::OncePerDay: return QStringLiteral("Once Per Day");
+        }
+        return QString();
+    }
+
+    inline QString description(EDiscordRpc value)
+    {
+        switch (value)
+        {
+            case EDiscordRpc::Always: return QStringLiteral("Always");
+            case EDiscordRpc::Never:  return QStringLiteral("Never");
+        }
+        return QString();
+    }
+
+    inline QString description(ELoadingMode value)
+    {
+        switch (value)
+        {
+            case ELoadingMode::Multiple:       return QStringLiteral("Multiple");
+            case ELoadingMode::All:            return QStringLiteral("All");
+            case ELoadingMode::AllButNew:      return QStringLiteral("All (New)");
+            case ELoadingMode::AllButModified: return QStringLiteral("All (Modified)");
+            case ELoadingMode::AllButPatched:  return QStringLiteral("All (Except Patched Assets)");
+        }
+        return QString();
+    }
+
+    inline QString description(ECompressedAudio value)
+    {
+        switch (value)
+        {
+            case ECompressedAudio::PlayDecompressed: return QStringLiteral("Play the decompressed data");
+            case ECompressedAudio::PlayCompressed:
+                return QStringLiteral("Play the compressed data (might not always be a valid audio data)");
+        }
+        return QString();
+    }
+
+    inline QString description(EIconStyle value)
+    {
+        switch (value)
+        {
+            case EIconStyle::Default:      return QStringLiteral("Default");
+            case EIconStyle::NoBackground: return QStringLiteral("No Background");
+            case EIconStyle::NoText:       return QStringLiteral("No Text");
+            case EIconStyle::Flat:         return QStringLiteral("Flat");
+            case EIconStyle::Cataba:       return QStringLiteral("Cataba");
+        }
+        return QString();
+    }
 
     // Equivalent to EStatusKind.ToString() in C# — returns the member name.
     inline QString statusKindName(EStatusKind kind)

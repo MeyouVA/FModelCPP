@@ -101,3 +101,31 @@ add_test(NAME test_curveassets COMMAND test_curveassets)
 add_executable(test_linearcolor test_linearcolor.cpp)
 target_link_libraries(test_linearcolor PRIVATE CUE4Parse)
 add_test(NAME test_linearcolor COMMAND test_linearcolor)
+
+add_executable(test_vectors test_vectors.cpp)
+target_link_libraries(test_vectors PRIVATE CUE4Parse)
+add_test(NAME test_vectors COMMAND test_vectors)
+
+add_executable(test_compression_codecs test_compression_codecs.cpp)
+target_link_libraries(test_compression_codecs PRIVATE CUE4Parse)
+add_test(NAME test_compression_codecs COMMAND test_compression_codecs)
+
+add_executable(test_geometry test_geometry.cpp)
+target_link_libraries(test_geometry PRIVATE CUE4Parse)
+add_test(NAME test_geometry COMMAND test_geometry)
+
+add_executable(test_bounds test_bounds.cpp)
+target_link_libraries(test_bounds PRIVATE CUE4Parse)
+add_test(NAME test_bounds COMMAND test_bounds)
+
+add_executable(test_aes test_aes.cpp)
+target_link_libraries(test_aes PRIVATE CUE4Parse)
+add_test(NAME test_aes COMMAND test_aes)
+
+add_executable(test_memory_image test_memory_image.cpp)
+target_link_libraries(test_memory_image PRIVATE CUE4Parse)
+add_test(NAME test_memory_image COMMAND test_memory_image)
+
+add_executable(test_pak test_pak.cpp)
+target_link_libraries(test_pak PRIVATE CUE4Parse)
+add_test(NAME test_pak COMMAND test_pak)

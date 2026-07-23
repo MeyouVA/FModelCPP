@@ -165,16 +165,16 @@
 
   <div class="meters">
     <div class="meter">
-      <div class="top"><span class="name">CUE4Parse — parsing core</span><span class="pct">~37%</span></div>
-      <div class="sub">195 C++ files · 27 test suites green</div>
-      <div class="bar"><span style="width:37%"></span></div>
+      <div class="top"><span class="name">CUE4Parse — parsing core</span><span class="pct">~50%</span></div>
+      <div class="sub">273 C++ files · 35 test suites green</div>
+      <div class="bar"><span style="width:50%"></span></div>
       <p class="note">The bottom-up reading spine is complete through the tagged-property system. Measured against the reading path; by raw file count it's ~11% (the 1,799 C# files are inflated by a huge asset-type + Wwise long tail).</p>
     </div>
     <div class="meter">
-      <div class="top"><span class="name">FModel — desktop app</span><span class="pct">~6%</span></div>
-      <div class="sub">13 C++ files · 1 test suite · Qt 6.8 Widgets</div>
-      <div class="bar"><span style="width:6%"></span></div>
-      <p class="note">Window shell, theme, resources, and the MVVM foundation are in. The view-model / view / rendering layers (233 C# files) are almost entirely ahead.</p>
+      <div class="top"><span class="name">FModel — desktop app</span><span class="pct">~10%</span></div>
+      <div class="sub">37 C++ files · 2 test suites · Qt 6.8 Widgets</div>
+      <div class="bar"><span style="width:10%"></span></div>
+      <p class="note">Window shell, theme, resources, the MVVM foundation and the whole persisted-settings tree are in — the app can now read and rewrite a real <code>AppSettings.json</code>. The view / view-model / rendering layers (228 C# files) are still ahead.</p>
     </div>
   </div>
 
@@ -200,9 +200,9 @@
         <ul class="list">
           <li><span class="li-mark"><span class="dot done"></span></span><div class="li-body"><div class="li-title">Readers layer</div><div class="li-desc"><code>FArchive</code>, byte / pointer / stream / big-endian / random-access + compressed proxy</div></div></li>
           <li><span class="li-mark"><span class="dot done"></span></span><div class="li-body"><div class="li-title">Versions</div><div class="li-desc"><code>EGame</code>, <code>ObjectVersion</code>, <code>FPackageFileVersion</code>, <code>VersionContainer</code></div></div></li>
-          <li><span class="li-mark"><span class="dot wip"></span></span><div class="li-body"><div class="li-title">Compression registry</div><div class="li-desc">API + <code>None</code> path; real Oodle / LZ4 / Zstd / Zlib codecs not yet wired</div></div></li>
+          <li><span class="li-mark"><span class="dot done"></span></span><div class="li-body"><div class="li-title">Compression codecs</div><div class="li-desc">Zlib/Gzip/LZ4 built-in (from-scratch DEFLATE + LZ4 block); Oodle/Zstd via runtime native-library load</div></div></li>
           <li><span class="li-mark"><span class="dot done"></span></span><div class="li-body"><div class="li-title">Core/Misc value structs</div><div class="li-desc"><code>FGuid</code>, <code>FDateTime</code>, <code>FEngineVersion</code>, <code>FSHAHash</code> …</div></div></li>
-          <li><span class="li-mark"><span class="dot wip"></span></span><div class="li-body"><div class="li-title">Core/Math — color layer</div><div class="li-desc"><code>FColor</code>, <code>FLinearColor</code>, UnrealMath subset (vectors/quats pending)</div></div></li>
+          <li><span class="li-mark"><span class="dot done"></span></span><div class="li-body"><div class="li-title">Core/Math — colors, vectors, geometry, bounds</div><div class="li-desc"><code>FColor</code>, <code>FLinearColor</code>, all vector types, <code>FQuat</code>/<code>FRotator</code>/<code>FMatrix</code>/<code>FTransform</code>/<code>FPlane</code>, and now <code>FBox</code>/<code>FBoxSphereBounds</code>/<code>FSphere</code>/<code>TRange</code> — every C# file bar <code>UnrealMathSSE</code></div></div></li>
           <li><span class="li-mark"><span class="dot done"></span></span><div class="li-body"><div class="li-title">FName name pool</div><div class="li-desc"><code>FNameEntrySerialized</code>, <code>FMappedName</code></div></div></li>
           <li><span class="li-mark"><span class="dot done"></span></span><div class="li-body"><div class="li-title">Package summary + custom versions</div></div></li>
           <li><span class="li-mark"><span class="dot done"></span></span><div class="li-body"><div class="li-title">Import / export map</div><div class="li-desc"><code>ObjectResource</code>, <code>FAssetArchive</code>, <code>ResolvedObject</code></div></div></li>
@@ -219,10 +219,10 @@
           <div class="phase-top"><span class="phase-tag">A</span><span class="phase-name">Real data access</span></div>
           <p class="phase-goal">Unblocks opening an actual shipped game.</p>
           <ul class="list" style="padding:0; margin:0 -18px;">
-            <li><span class="li-mark"><span class="dot pend"></span></span><div class="li-body"><div class="li-title">Encryption / AES</div><div class="li-desc"><code>Aes</code>, <code>FAesKey</code> — decrypt real archives</div></div><span class="li-count">2</span></li>
-            <li><span class="li-mark"><span class="dot pend"></span></span><div class="li-body"><div class="li-title">Pak container</div><div class="li-desc"><code>PakFileReader</code>, <code>FPakEntry</code>, <code>FPakInfo</code></div></div><span class="li-count">4</span></li>
+            <li><span class="li-mark"><span class="dot done"></span></span><div class="li-body"><div class="li-title">Encryption / AES</div><div class="li-desc"><code>Aes</code> + <code>FAesKey</code> — AES-256 ECB written from scratch (C# gets it from the BCL), pinned to the FIPS-197 and NIST SP 800-38A vectors</div></div></li>
+            <li><span class="li-mark"><span class="dot done"></span></span><div class="li-body"><div class="li-title">Pak container</div><div class="li-desc"><code>PakFileReader</code>, <code>FPakEntry</code>, <code>FPakInfo</code> — legacy, updated, flat and frozen indices; compressed + encrypted extraction. Per-game <code>GameTypes</code> hooks throw rather than guess</div></div></li>
             <li><span class="li-mark"><span class="dot pend"></span></span><div class="li-body"><div class="li-title">IO Store</div><div class="li-desc"><code>.utoc</code>/<code>.ucas</code> — <code>IoStoreReader</code> &amp; friends</div></div><span class="li-count">54</span></li>
-            <li><span class="li-mark"><span class="dot pend"></span></span><div class="li-body"><div class="li-title">Virtual file system</div><div class="li-desc"><code>VfsEntry</code>, <code>AesVfsReader</code>, abstractions</div></div><span class="li-count">6</span></li>
+            <li><span class="li-mark"><span class="dot done"></span></span><div class="li-body"><div class="li-title">Virtual file system</div><div class="li-desc"><code>GameFile</code>, <code>VfsEntry</code>, <code>IVfsReader</code>/<code>IAesVfsReader</code> and both abstract readers — only <code>MountTo</code> waits on <code>FileProviderDictionary</code></div></div></li>
             <li><span class="li-mark"><span class="dot wip"></span></span><div class="li-body"><div class="li-title">FileProvider (concrete)</div><div class="li-desc"><code>DefaultFileProvider</code> — only the interface stub exists</div></div><span class="li-count">~15</span></li>
             <li><span class="li-mark"><span class="dot pend"></span></span><div class="li-body"><div class="li-title">Mappings provider</div><div class="li-desc"><code>.usmap</code> — unversioned property parsing</div></div><span class="li-count">~12</span></li>
           </ul>
@@ -232,8 +232,8 @@
           <div class="phase-top"><span class="phase-tag">B</span><span class="phase-name">Math &amp; memory image</span></div>
           <p class="phase-goal">Geometry types every mesh/material asset needs.</p>
           <ul class="list" style="padding:0; margin:0 -18px;">
-            <li><span class="li-mark"><span class="dot pend"></span></span><div class="li-body"><div class="li-title">Core/Math remainder</div><div class="li-desc"><code>FVector</code>, <code>FQuat</code>, <code>FRotator</code>, <code>FMatrix</code>, <code>FTransform</code>, <code>FBox</code> …</div></div></li>
-            <li><span class="li-mark"><span class="dot pend"></span></span><div class="li-body"><div class="li-title">FMemoryImageArchive</div><div class="li-desc">frozen/cooked structure reader</div></div><span class="li-count">1</span></li>
+            <li><span class="li-mark"><span class="dot done"></span></span><div class="li-body"><div class="li-title">Core/Math remainder</div><div class="li-desc">bounds + ranges + half vectors landed; only <code>UnrealMathSSE</code> is left, and it is an SIMD fast path with no unique semantics</div></div></li>
+            <li><span class="li-mark"><span class="dot done"></span></span><div class="li-body"><div class="li-title">FMemoryImageArchive</div><div class="li-desc">frozen/cooked structure reader — arrays, strings, bit arrays, sparse arrays, sets and maps. The material-preshader readers wait on the material layer</div></div></li>
           </ul>
         </div>
 
@@ -267,32 +267,34 @@
       <span class="track-num">Track 2</span>
       <h2>FModel — the desktop app</h2>
     </div>
-    <p class="track-sub">A Qt 6 Widgets port of the WPF app, kept visually and structurally faithful (same <code>x:Name</code>s, same layout, AdonisUI Dark theme). Currently a running shell with no data behind the controls.</p>
+    <p class="track-sub">A Qt 6 Widgets port of the WPF app, kept visually and structurally faithful (same <code>x:Name</code>s, same layout, AdonisUI Dark theme). A running shell plus the full persisted-settings tree; the controls are not yet bound to it.</p>
 
     <div class="cols">
       <!-- DONE -->
       <div class="card">
-        <div class="card-head"><span>Foundation — done</span><span class="tag done">6 pieces</span></div>
+        <div class="card-head"><span>Foundation — done</span><span class="tag done">8 pieces</span></div>
         <ul class="list">
           <li><span class="li-mark"><span class="dot done"></span></span><div class="li-body"><div class="li-title">MainWindow shell</div><div class="li-desc">menu bar, 3 left tabs, explorer / editor / log area, status bar</div></div></li>
           <li><span class="li-mark"><span class="dot done"></span></span><div class="li-body"><div class="li-title">AdonisUI Dark theme</div><div class="li-desc"><code>Theme.cpp</code> — Fusion palette + stylesheet, accent <code>#206BD4</code></div></div></li>
           <li><span class="li-mark"><span class="dot done"></span></span><div class="li-body"><div class="li-title">Resources</div><div class="li-desc">107 files embedded via <code>.qrc</code></div></div></li>
           <li><span class="li-mark"><span class="dot done"></span></span><div class="li-body"><div class="li-title">MVVM base</div><div class="li-desc"><code>ViewModel</code>, <code>Command</code>, <code>ViewModelCommand&lt;T&gt;</code> (QObject + QPointer)</div></div></li>
           <li><span class="li-mark"><span class="dot done"></span></span><div class="li-body"><div class="li-title">FStatus view-model</div><div class="li-desc">wired to the status bar via <code>propertyChanged</code></div></div></li>
-          <li><span class="li-mark"><span class="dot wip"></span></span><div class="li-body"><div class="li-title">Enums</div><div class="li-desc">plain enums ported; <code>[Description]</code> &amp; asset-category enums deferred</div></div></li>
+          <li><span class="li-mark"><span class="dot wip"></span></span><div class="li-body"><div class="li-title">Enums</div><div class="li-desc">plain + <code>[Description]</code> enums ported (as a <code>description()</code> overload set); asset-category enum deferred</div></div></li>
+          <li><span class="li-mark"><span class="dot done"></span></span><div class="li-body"><div class="li-title">Settings tree</div><div class="li-desc"><code>UserSettings</code> / <code>DirectorySettings</code> / <code>EndpointSettings</code> / <code>VersioningSettings</code> / <code>CustomDirectory</code> — reads &amp; rewrites a real <code>AppSettings.json</code> as a fixed point</div></div></li>
+          <li><span class="li-mark"><span class="dot done"></span></span><div class="li-body"><div class="li-title">WPF value types</div><div class="li-desc"><code>Hotkey</code> + <code>Key</code>/<code>ModifierKeys</code> (WPF's numeric values, via <code>Q_ENUM_NS</code>) and <code>GridLength</code> — needed for on-disk format compatibility</div></div></li>
         </ul>
       </div>
 
       <!-- REMAINING -->
       <div class="card">
-        <div class="card-head"><span>Remaining — phased</span><span class="tag pend">~220 files</span></div>
+        <div class="card-head"><span>Remaining — phased</span><span class="tag pend">~215 files</span></div>
 
         <div class="phase">
-          <div class="phase-top"><span class="phase-tag">1</span><span class="phase-name">View-models &amp; settings</span></div>
+          <div class="phase-top"><span class="phase-tag">1</span><span class="phase-name">View-models</span></div>
           <p class="phase-goal">The logic layer behind every control.</p>
           <ul class="list" style="padding:0; margin:0 -18px;">
             <li><span class="li-mark"><span class="dot pend"></span></span><div class="li-body"><div class="li-title">ViewModels</div><div class="li-desc"><code>ApplicationViewModel</code>, <code>CUE4ParseViewModel</code>, <code>ThreadWorker</code>, tab/search, all commands</div></div><span class="li-count">45</span></li>
-            <li><span class="li-mark"><span class="dot pend"></span></span><div class="li-body"><div class="li-title">UserSettings</div><div class="li-desc">↔ <code>AppSettings.json</code> + the <code>[Description]</code> enum mechanism</div></div><span class="li-count">5</span></li>
+            <li><span class="li-mark"><span class="dot wip"></span></span><div class="li-body"><div class="li-title">API endpoints</div><div class="li-desc">the response DTOs <code>UserSettings</code> stores are in; the endpoints and HTTP layer are not</div></div><span class="li-count">13</span></li>
           </ul>
         </div>
 
@@ -330,20 +332,20 @@
     <p class="k">Each is a self-contained, testable unit — in the standing bottom-up order. Pick one per "continue".</p>
     <div class="next-grid">
       <div class="next-item">
-        <div class="h"><span class="n">core</span> Encryption / AES</div>
-        <p>Small and high-leverage: <code>Aes</code> + <code>FAesKey</code> are the gate to every real archive. Pairs naturally with the Pak reader right after.</p>
+        <div class="h"><span class="n">core</span> IO Store</div>
+        <p><code>.utoc</code>/<code>.ucas</code> — the other container format, and the one every UE5 game actually ships. The VFS abstractions it plugs into are now in place, so this is the last thing between the port and a real game directory.</p>
       </div>
       <div class="next-item">
-        <div class="h"><span class="n">core</span> Core/Math vectors</div>
-        <p><code>FVector</code>/<code>FQuat</code>/<code>FRotator</code>/<code>FTransform</code> — extends the color layer already done, and every mesh/material asset depends on them.</p>
-      </div>
-      <div class="next-item">
-        <div class="h"><span class="n">app</span> UserSettings + <code>[Description]</code> enums</div>
-        <p>Builds on the new Framework base; backs the Settings dialog and unblocks the loading-mode / game-selector combos.</p>
+        <div class="h"><span class="n">core</span> DefaultFileProvider</div>
+        <p>The concrete provider that scans a game directory, mounts every pak it finds and answers <code>TryLoadPackage</code> — needs <code>FileProviderDictionary</code> and <code>MountTo</code>, the one piece of the VFS layer left over.</p>
       </div>
       <div class="next-item">
         <div class="h"><span class="n">app</span> ApplicationViewModel skeleton</div>
-        <p>The root VM that owns <code>FStatus</code> + the tab control — turns the inert shell into something the menu commands can drive.</p>
+        <p>The root VM that owns <code>FStatus</code> + the tab control — turns the inert shell into something the menu commands can drive. Now unblocked: it reads <code>UserSettings</code> throughout.</p>
+      </div>
+      <div class="next-item">
+        <div class="h"><span class="n">app</span> Settings dialog</div>
+        <p><code>SettingsViewModel</code> + the view, binding the settings tree that just landed — the first place the ported <code>description()</code> overloads earn their keep.</p>
       </div>
     </div>
   </div>
@@ -352,7 +354,7 @@
   <footer>
     <span>U:\Programs\AI\Claude\FModelCPP</span>
     <span>MSVC + Ninja · Qt 6.8.3</span>
-    <span>27 test suites green</span>
+    <span>35 test suites green</span>
     <span>faithful C#→C++ · bottom-up</span>
   </footer>
 </div>

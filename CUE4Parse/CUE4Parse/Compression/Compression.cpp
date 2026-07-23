@@ -7,6 +7,8 @@
 #include <string>
 
 #include "../UE4/Exceptions/UnknownCompressionMethodException.h"
+#include "Inflate.h"
+#include "LZ4.h"
 
 namespace CUE4Parse::Compression
 {
@@ -60,6 +62,42 @@ namespace CUE4Parse::Compression
     void Compression::RegisterDecompressor(CompressionAlgorithm algorithm, DecompressFunc func)
     {
         g_decompressors[AlgorithmIndex(algorithm)] = std::move(func);
+    }
+
+    void Compression::RegisterBuiltinDecompressors()
+    {
+        // LZ4 — matches C#'s (written = LZ4Codec.Decode(source, destination)) > 0.
+        RegisterDecompressor(CompressionAlgorithm::LZ4,
+            [](const uint8_t* src, int srcLen, uint8_t* dst, int dstLen, int& written)
+            {
+                const int r = LZ4_decompress_safe(src, dst, srcLen, dstLen);
+                written = r < 0 ? 0 : r;
+                return r > 0;
+            });
+
+        // Zlib — the in-tree Inflate decoder (C# uses the native Zlib-ng DLL via UseNativeZlib).
+        RegisterDecompressor(CompressionAlgorithm::Zlib,
+            [](const uint8_t* src, int srcLen, uint8_t* dst, int dstLen, int& written)
+            {
+                const int r = ZlibDecompress(src, srcLen, dst, dstLen);
+                written = r < 0 ? 0 : r;
+                return r >= 0;
+            });
+
+        // Gzip — same decoder with a gzip header/trailer.
+        RegisterDecompressor(CompressionAlgorithm::Gzip,
+            [](const uint8_t* src, int srcLen, uint8_t* dst, int dstLen, int& written)
+            {
+                const int r = GzipDecompress(src, srcLen, dst, dstLen);
+                written = r < 0 ? 0 : r;
+                return r >= 0;
+            });
+    }
+
+    namespace
+    {
+        // Eager registration at load time, mirroring C#'s static _decompressor field initializer.
+        const bool g_builtinsRegistered = [] { Compression::RegisterBuiltinDecompressors(); return true; }();
     }
 
     bool Compression::HasDecompressor(CompressionAlgorithm algorithm)

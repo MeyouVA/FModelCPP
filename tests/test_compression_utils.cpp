@@ -30,19 +30,23 @@ static void TestCompression()
     auto out = Compression::Decompress(src, static_cast<int>(src.size()), CompressionMethod::None);
     CHECK(out == src);
 
-    // Unknown/unregistered algorithm throws until a codec is registered.
+    // Codecs the port ships built-in are registered at load (see test_compression_codecs for real data).
+    CHECK(Compression::HasDecompressor(CompressionAlgorithm::LZ4));
+    CHECK(Compression::HasDecompressor(CompressionAlgorithm::Zlib));
+
+    // Brotli is not built in, so it exercises the "throws until a codec is registered" registry path.
+    CHECK(!Compression::HasDecompressor(CompressionAlgorithm::Brotli));
     bool threw = false;
     try
     {
         std::vector<uint8_t> comp{9, 9, 9};
-        Compression::Decompress(comp, 16, CompressionMethod::LZ4);
+        Compression::Decompress(comp, 16, CompressionMethod::Brotli);
     }
     catch (const std::exception&) { threw = true; }
     CHECK(threw);
-    CHECK(!Compression::HasDecompressor(CompressionAlgorithm::LZ4));
 
     // Register a trivial "codec" (identity copy) and verify it is invoked and length-checked.
-    Compression::RegisterDecompressor(CompressionAlgorithm::LZ4,
+    Compression::RegisterDecompressor(CompressionAlgorithm::Brotli,
         [](const uint8_t* s, int sLen, uint8_t* d, int dLen, int& written) -> bool
         {
             int n = sLen < dLen ? sLen : dLen;
@@ -50,10 +54,10 @@ static void TestCompression()
             written = dLen; // pretend we filled the whole output
             return true;
         });
-    CHECK(Compression::HasDecompressor(CompressionAlgorithm::LZ4));
+    CHECK(Compression::HasDecompressor(CompressionAlgorithm::Brotli));
 
     std::vector<uint8_t> comp{10, 20, 30};
-    auto dec = Compression::Decompress(comp, 3, CompressionMethod::LZ4);
+    auto dec = Compression::Decompress(comp, 3, CompressionMethod::Brotli);
     CHECK(dec.size() == 3);
     CHECK(dec[0] == 10 && dec[1] == 20 && dec[2] == 30);
 }

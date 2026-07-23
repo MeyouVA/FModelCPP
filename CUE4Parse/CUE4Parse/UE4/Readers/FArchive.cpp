@@ -223,24 +223,6 @@ namespace CUE4Parse::UE4::Readers
             return (value << 32) | (value >> 32);
         }
 
-        // Mirrors C#'s Enum.TryParse<CompressionMethod> (case-sensitive, by member name).
-        bool TryParseCompressionMethod(const std::string& s, CompressionMethod& out)
-        {
-            if (s == "None") { out = CompressionMethod::None; return true; }
-            if (s == "Zlib") { out = CompressionMethod::Zlib; return true; }
-            if (s == "Gzip") { out = CompressionMethod::Gzip; return true; }
-            if (s == "Custom") { out = CompressionMethod::Custom; return true; }
-            if (s == "Oodle") { out = CompressionMethod::Oodle; return true; }
-            if (s == "LZ4") { out = CompressionMethod::LZ4; return true; }
-            if (s == "LZO") { out = CompressionMethod::LZO; return true; }
-            if (s == "Zstd") { out = CompressionMethod::Zstd; return true; }
-            if (s == "XB1Zlib") { out = CompressionMethod::XB1Zlib; return true; }
-            if (s == "XboxOneGDKZlib") { out = CompressionMethod::XboxOneGDKZlib; return true; }
-            if (s == "Brotli") { out = CompressionMethod::Brotli; return true; }
-            if (s == "PWC") { out = CompressionMethod::PWC; return true; }
-            if (s == "Unknown") { out = CompressionMethod::Unknown; return true; }
-            return false;
-        }
     }
 
     void FArchive::SerializeCompressedNew(uint8_t* dest, int length, const std::string& compressionFormatToDecodeOldV1Files,
@@ -308,7 +290,7 @@ namespace CUE4Parse::UE4::Readers
 
         // CompressionFormatToDecode came from disk, need to validate it.
         CompressionMethod compressionFormat;
-        if (!TryParseCompressionMethod(compressionFormatToDecode, compressionFormat))
+        if (!Compression::TryParseCompressionMethod(compressionFormatToDecode, compressionFormat))
         {
             throw Exceptions::ParserException(
                 *this, "BulkData compressed header read error. This package may be corrupt!\nCompressionFormatToDecode not found : " + compressionFormatToDecode);

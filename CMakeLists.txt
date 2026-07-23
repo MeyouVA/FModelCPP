@@ -9,6 +9,8 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "" FORCE)
 endif()
 
+# Defines both the CUE4Parse and CUE4Parse-Conversion targets — they are sibling projects inside one checkout,
+# mirroring the C# repo layout.
 add_subdirectory(CUE4Parse)
 
 enable_testing()

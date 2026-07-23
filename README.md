@@ -43,9 +43,53 @@ Qt6 is found; the CUE4Parse library and tests build fine without it.
   base is `FStatus` (`FModel/Framework/FStatus.{h,cpp}`, ported from `Framework/FStatus.cs`) — it tracks an
   `EStatusKind` + label and derives `IsReady`, and it is wired into `MainWindow`'s status bar (the label binds
   to `Status.Label` through the `propertyChanged` signal, matching the WPF binding). `EStatusKind` and the
-  other dependency-free plain enums live in `FModel/Enums.h` (ported from `Enums.cs`; the `[Description]` and
-  `AssetCategory` enums are deferred). Behaviour is covered by `FModel/tests/test_framework.cpp`
-  (QtTest, registered with ctest).
+  other plain enums live in `FModel/Enums.h` (ported from `Enums.cs`; only the `AssetCategory` enum is still
+  deferred, since it depends on `AssetCategoryExtensions.CategoryBase`). Behaviour is covered by
+  `FModel/tests/test_framework.cpp` (QtTest, registered with ctest).
+- **Settings** (`FModel/Settings/`): the whole persisted settings tree — `UserSettings` (the root, ~70 stored
+  properties), `DirectorySettings` (per game directory), `EndpointSettings`, `VersioningSettings` and
+  `CustomDirectory`, plus the DTOs they embed (`AesResponse`, `AuthResponse`, `DetectedGame`). Covered by
+  `FModel/tests/test_settings.cpp`. Notes on this layer:
+  - **The JSON shape is a compatibility contract, not a design choice.** `%APPDATA%/FModel/AppSettings.json` is
+    written by the C# app people already have installed, so the port has to read and rewrite it losslessly.
+    C# gets its shape from Newtonsoft's reflective serializer; C++ has no reflection, so every settings type
+    carries a hand-written `toJson`/`readJson` pair, with the conventions Newtonsoft applies for free pinned in
+    `Extensions/JsonExtensions.h`: PascalCase property names, enums as their **underlying integers**, dates as
+    ISO-8601 with offset, and absent keys leaving defaults untouched (`MissingMemberHandling.Ignore`).
+  - **Two nested DTOs deliberately break the casing rule.** `AesResponse` uses camelCase (`mainKey`,
+    `dynamicKeys`) and `AuthResponse` snake_case (`access_token`) because in C# they carry explicit
+    `[JsonProperty]` names — they double as the API wire format. The port keeps both.
+  - **`Framework/InputKeys.h` and `Framework/GridLength.h` are WPF stand-ins that exist for the file format.**
+    A `Hotkey` persists as `{"Key": <int>, "Modifiers": <int>}` using `System.Windows.Input.Key`'s numeric
+    values, and `GridLength` persists as a string via WPF's type converter (`"730"`, `"Auto"`, `"2*"`).
+    `Qt::Key` is *not* reused: its values differ, so persisting it would silently corrupt existing hotkeys.
+    `test_settings` pins the values that real settings files anchor (`A == 44`, `T == 63`, `Control == 2`).
+  - **`Key`'s name table comes from moc, not from a hand-written switch.** `keyName()` has to reproduce C#'s
+    `Key.ToString()` for ~170 enumerators. The enum is registered with `Q_NAMESPACE`/`Q_ENUM_NS` and the names
+    read back via `QMetaEnum::valueToKey`, so they are derived from the enum declaration itself and cannot
+    drift. (An X-macro was tried first and abandoned: MSVC leaves the callback macro unexpanded at one of two
+    otherwise identical invocation sites, even though `/P` preprocesses the same file correctly.)
+  - **`[Description]` is modelled as an overload set.** C#'s attribute becomes one `description(E)` function
+    per enum (`Description(E)` returning `const char*` on the CUE4Parse side, which stays Qt-free). This is
+    what the earlier `FModel/Enums.h` comment deferred.
+  - **`DirectorySettings::clone()` deep-copies where C# shallow-copies.** C#'s `ICloneable.Clone()` is
+    `MemberwiseClone()`, so a clone *shares* its `Versioning`/`Endpoints`/`Directories` instances with the
+    original. In C++ those are owned by their parent, and sharing them would mean a double-delete or a dangler.
+    `DirectorySettings::Default()` copies out of the stored entry for the same reason. Visible difference:
+    editing a clone no longer writes through to the original — which is what `GameSelectorViewModel`, the only
+    caller, actually wants.
+  - **Deferred:** `UserSettings.ExportOptions` (projects onto CUE4Parse-Conversion's unported `ExporterOptions`;
+    every field it reads is present) and `EndpointSettings.TryValidate` (needs `DynamicApiEndpoint` + HTTP).
+  - **Verified against a real file.** `test_settings` runs on a synthetic fixture by default so the suite stays
+    hermetic and reproducible — a real `AppSettings.json` holds live AES keys. Point `FMODEL_SETTINGS_FIXTURE`
+    at one to additionally assert that load → save → load is a fixed point and that no key is dropped; this was
+    run against a real 38-directory file, which passes.
+
+`CUE4Parse/CUE4Parse-Conversion/` is a new project sitting alongside `CUE4Parse/CUE4Parse/` inside the same
+checkout, mirroring the C# repo layout (both targets are defined by `CUE4Parse/CMakeLists.txt`). It holds, so
+far, only the export-format enums (`EMeshFormat`, `ELodFormat`, `ESocketFormat`, `ETextureFormat`,
+`EAnimFormat`, `EFileCompressionFormat`) that `UserSettings` persists. It is a header-only INTERFACE target
+that becomes a static library as soon as the first `.cpp` lands.
 
 The FModel UI (WPF) is being ported phase-by-phase alongside the CUE4Parse core below.
 
@@ -131,6 +175,13 @@ foundation** everything else builds on:
 | UCurve* assets | `UE4/Objects/Engine/Curves/{UCurveBase,UCurveFloat,UCurveVector,UCurveLinearColor}.cs` | same paths under `FModelCPP/.../Curves/*.{h,cpp}` |
 | Math: UnrealMath + CubicCurve2D | `UE4/.../Math/UnrealMathUtility.cs`, `Utils/MathUtils.cs` | `UE4/Objects/Core/Math/UnrealMathUtility.h`, `Utils/MathUtils.h` |
 | Colors: FColor + FLinearColor | `UE4/.../Core/Math/{FColor,FLinearColor}.cs`, `Utils/UnsafePrint.cs` | `UE4/Objects/Core/Math/{FColor.h,FLinearColor.{h,cpp}}`, `Utils/UnsafePrint.h` |
+| Vectors: FVector + FVector2D/FVector4 + int/packed vectors | `UE4/.../Core/Math/{FVector,FVector2D,FVector4,FIntVector,FIntVector2,FUIntVector,FIntPoint,FVector3SignedShortScale,FTwoVectors,FCapsuleShape,FFloat16,TIntPoint,TPair}.cs` | same paths under `UE4/Objects/Core/Math/*.h` (+ `FVector.cpp`) |
+| Geometry: FQuat/FRotator/FMatrix/FTransform/FPlane | `UE4/.../Core/Math/{FQuat,FRotator,Matrix,FTransform,FPlane,RotationMatrix,RotationTranslationMatrix,QuatRotationTranslationMatrix}.cs` | same paths under `UE4/Objects/Core/Math/*.h` (+ `{Matrix,FQuat,FRotator}.cpp`, `EForceInit.h`) |
+| Bounds + ranges: FBox/FSphere/FBoxSphereBounds/TRange | `UE4/.../Core/Math/{FBox,FBox2D,TBox3,FSphere,FBoxSphereBounds,TInterval,TRange,TRangeBound,TIntVector,FHalfVector,FVector3UnsignedShort}.cs` | same paths under `UE4/Objects/Core/Math/*.h` |
+| AES-256 decryption | `Encryption/Aes/{Aes,FAesKey}.cs` | `Encryption/Aes/{Aes.{h,cpp},FAesKey.h}` (inverse cipher written from scratch) |
+| Frozen/memory-image reader | `UE4/Readers/FMemoryImageArchive.cs` | `UE4/Readers/FMemoryImageArchive.{h,cpp}` |
+| GameFile + virtual file system | `FileProvider/Objects/GameFile.cs`, `UE4/VirtualFileSystem/{IVfsReader,IAesVfsReader,VfsEntry,AbstractVfsReader,AbstractAesVfsReader}.cs` | same paths under `FileProvider/Objects/` and `UE4/VirtualFileSystem/` (+ `Utils/StringComparer.h`) |
+| Pak container | `UE4/Pak/PakFileReader.cs`, `UE4/Pak/Objects/{FPakInfo,FPakEntry,FPakCompressedBlock}.cs` | same paths under `UE4/Pak/` |
 | FField / FProperty system | `UE4/Objects/UObject/{FField,UnrealType}.cs` | `UE4/Objects/UObject/{FField,UnrealType}.{h,cpp}` |
 | UStruct family | `UE4/Objects/UObject/{UField,UStruct,UScriptStruct,UEnum,UFunction,UClass}.cs` | same paths under `FModelCPP/.../UObject/*.{h,cpp}` |
 | UObjectRedirector | `UE4/Assets/Exports/UObjectRedirector.cs` | `UE4/Assets/Exports/UObjectRedirector.{h,cpp}` |
@@ -156,13 +207,94 @@ These are noted inline in the headers where they occur:
   and primitive arrays swap correctly.
 - **Omitted from this reader batch:** `FRandomAccessStreamArchive` (a thin GenericReader wrapper,
   redundant with the file archive).
-- **Decompression is a registry, not hard-wired codecs.** C# builds a decompressor from external
-  native packages (Oodle, K4os LZ4, ZstdSharp, Zlib-ng). Those aren't vendored here yet, so
-  `Compression` keeps the same public API (`Decompress` overloads, `LOADING_COMPRESSION_CHUNK_SIZE`)
-  but routes each algorithm through a registered `DecompressFunc` (mirroring C#'s
-  `DecompressorBuilder.Add`). `None` works out of the box (a plain copy); every other algorithm
-  throws `UnknownCompressionMethodException` until a codec is registered via `RegisterDecompressor`.
-  Wire real codecs in there when their libraries are added — no call-site changes needed.
+- **Decompression is a registry with built-in codecs.** C# builds a decompressor from external native
+  packages (Oodle, K4os LZ4, ZstdSharp, Zlib-ng); the C++ port routes each algorithm through a registered
+  `DecompressFunc` (mirroring C#'s `DecompressorBuilder.Add`) and keeps the same public API (`Decompress`
+  overloads, `LOADING_COMPRESSION_CHUNK_SIZE`). What's implemented:
+  - **Zlib / Gzip** — a from-scratch DEFLATE inflater (`Compression/Inflate.{h,cpp}`, RFC 1951/1950/1952,
+    canonical-Huffman, puff-style). Fully built-in — **no DLL needed** (C# requires the Zlib-ng DLL).
+  - **LZ4** — a safe block decoder (`Compression/LZ4.{h,cpp}`), replacing C#'s native P/Invoke.
+  - **Oodle / Zstd** — can't be vendored (Oodle is proprietary; a full Zstd decoder is too large), so
+    `Compression/{OodleHelper,ZstdHelper}.{h,cpp}` load a native library at runtime (`LoadLibraryA`/`dlopen`)
+    and register `OodleLZ_Decompress` / `ZSTD_decompress` — the same runtime-load approach C# uses. Call
+    `OodleHelper::Initialize(path)` / `ZstdHelper::Initialize(path)` with a present library.
+  - `None` is a plain copy; **Brotli** is unimplemented (C#'s default builder doesn't wire it either) and
+    throws `UnknownCompressionMethodException` until registered. LZ4/Zlib/Gzip are auto-registered at load via
+    `RegisterBuiltinDecompressors()`. Covered by `tests/test_compression_codecs.cpp` (golden .NET vectors + LZ4).
+- **The Core/Math geometry cluster is mutually recursive**, so it is split the same way `FVector`/`FVector4`
+  were: each header forward-declares its siblings and *declares* the cross-type members, whose bodies live in
+  `Matrix.cpp` / `FQuat.cpp` / `FRotator.cpp` where every type is complete. `FTransform` needs no `.cpp` — by
+  the time it is included, everything it touches is already defined. Notes on the cluster:
+  - `FMatrix` is a **value type** here (C# makes it a `class`); every use in the source copies or mutates a
+    local, so value semantics are faithful, and `FRotationMatrix`/`FQuatRotationMatrix` still derive from it.
+  - `FRotator(double,double,double)` is omitted for the same reason as `FVector`'s: alongside the `float`
+    overload it makes every all-int construction ambiguous in C++ (C# instead prefers `float`).
+  - `FQuat::operator*` uses only the portable scalar path; C#'s SSE `VectorQuaternionMultiply2` fast path
+    is not ported.
+  - **Normalized results are ~0.17% off unit length**, because `Normalize()` uses the Quake III `InvSqrt`
+    approximation — bit-for-bit what C# does. `IsNormalized()` tolerates 0.01, and `tests/test_geometry.cpp`
+    compares long vectors with a *relative* tolerance for this reason. This is fidelity, not a defect.
+  - Deferred: the `[StructFallback]` `FTransform(FStructFallback)` ctor (the Math layer deliberately does not
+    depend on the Assets layer), `TTransform<T>` ctors, and the `System.Numerics` conversions.
+- **Core/Math is complete except `UnrealMathSSE`**, which is an SIMD fast path with no semantics of its own —
+  every operation it accelerates already exists in the ported scalar form. The bounds cluster that finished it:
+  - `FBox`'s `FBox(FVector[] points)` ctor is ported **with its upstream bug intact**: it *sums* the points into
+    both `Min` and `Max` instead of taking their extremes. Nothing on the parse path calls it, and a silent
+    behaviour change would be a worse surprise than the bug. Every other accumulation path (`operator+`) is
+    correct, and `tests/test_bounds.cpp` asserts the property that matters — an accumulated box contains every
+    point fed into it.
+  - `FBoxSphereBounds::TransformBy` does its arithmetic in `FVector` where C# uses `System.Numerics.Vector3`.
+    Every operation involved (component-wise multiply, `Abs`, `Max`, `Dot`) is element-wise and identical in
+    both, so the results match; `Vector3.Max` has no `FVector` equivalent and is a private helper.
+  - **`FFloat16` gained `ToFloat`/`FromFloat`, which have no C# counterpart.** C# never decodes `FFloat16`
+    because it has `System.Half` and uses *that* wherever a half is consumed (`FHalfVector`,
+    `FVector3UnsignedShort`). C++ has no standard half, so `FFloat16` doubles as the `Half` stand-in and has to
+    carry the conversion. `ToFloat` is exact for all 65 536 encodings (subnormals, infinities and NaNs
+    included); `FromFloat` rounds half-to-even like `System.Half`'s narrowing conversion. The cast operator is
+    `explicit` — an implicit one would quietly pull `FFloat16` into arithmetic overload resolution everywhere.
+  - The `FHalfVector`/`FVector3UnsignedShort` **implicit** conversion operators become explicit `ToFVector()`
+    calls: C++ implicit conversions between struct types are far easier to trip over than C#'s, and there are
+    only a handful of call sites.
+  - `TRangeBound` keeps C#'s `Pack = 1` via `#pragma pack`, so `sizeof(TRangeBound<float>) == 5` and
+    `sizeof(TRange<float>) == 10` — the layout they are read with. `tests/test_bounds.cpp` asserts both.
+  - `TVector<T>` is backed by `std::vector` rather than `T[]`, which gives it the same value semantics on copy.
+- **AES is implemented, not mapped.** C# gets AES from `System.Security.Cryptography` (ECB, `PaddingMode.None`,
+  256-bit) and only ever decrypts. C++ has no standard crypto and the port vendors no crypto library, so
+  `Aes.cpp` contains the FIPS-197 inverse cipher and key schedule directly. This is the one BCL primitive the
+  port reimplements rather than maps, so `tests/test_aes.cpp` pins it to published vectors — the FIPS-197 §C.3
+  AES-256 example and the four-block NIST SP 800-38A ECB-AES256 vector — rather than to itself. Encryption is
+  deliberately absent: CUE4Parse never encrypts, and an unused encryptor would be untested code sitting next
+  to the decryptor. One addition with no C# counterpart, `DecryptInPlace`, saves a copy per compression block
+  on the extract path.
+- **The pak layer is ported in full except the per-game `GameTypes` hooks.** `FPakInfo`, `FPakEntry` and
+  `PakFileReader` cover the legacy, updated, flat and frozen index formats and both extraction paths. What is
+  *not* ported is everything reaching into `CUE4Parse.GameTypes` — roughly forty games' bespoke footer
+  decryption, extract paths and Lua/ini/csv post-processing (ValorantSource, ArenaBreakout, InZOI, Rennsport,
+  GameForPeace, Dragon Quest XI, Century, ProSpi, and the Lua decryptors). Where C# dispatches to one of
+  those, the port **throws with the game named** rather than falling through to the generic path: silently
+  returning wrong bytes would be far worse than an explicit gap. Every game branch that is self-contained
+  arithmetic — the XORs, offset fix-ups, bit-shuffles and magic checks — *is* ported as-is.
+- **`FByteBulkDataHeader` is not ported yet, so the partial-read parameter is dropped** from
+  `GameFile::Read`/`CreateReader` and `IVfsReader::Extract`. `PakFileReader::Extract` keeps the offset/size
+  arithmetic intact around a zero offset, so restoring the parameter with the bulk-data layer is a local change.
+- **`FMemoryImageArchive` syncs Position instead of overriding it.** C# overrides the `Position` property to
+  forward to the inner archive; `Position` is a plain field on the C++ `FArchive`, so every byte-source seam
+  (`Read`/`Seek`/`Serialize`/`ReadScalar`/`ReadElements`/`ReadBytes`/`ReadSpan`) pushes it into the inner
+  reader and reads it back. All the templated helpers route through those seams, so the two stay in lockstep
+  without a virtual property. Its `ReadMaterialParameterType`/`ReadMaterialUniformPreshaderHeader` and the
+  `PointerTable` field wait on the material layer; nothing on the pak path touches them.
+- **`AbstractVfsReader::IsValidIndex` range-checks every read, which C# does not need to.** The probe runs on
+  data decrypted with a key that is probably wrong, so the length it reads is arbitrary and the seek routinely
+  lands outside the buffer. C# gets a bounds exception there; the C++ memory archives `memcpy` without
+  checking, so an unchecked probe would read out of bounds instead. It also keeps C#'s wide-string seek
+  arithmetic verbatim even though that overshoots the terminator by two code units — changing it would change
+  which AES keys are accepted.
+- **`Utils/StringComparer.h` has no C# counterpart**: it stands in for `System.StringComparer`, which the VFS
+  layer threads through `Mount(StringComparer)` to decide whether pak paths compare case-sensitively. It is
+  modelled as a stateful `std::map` comparator, which is what an ordered C++ map needs.
+- **`Files` maps to `std::map<std::string, std::shared_ptr<GameFile>, StringComparer>`.** `shared_ptr` is not
+  incidental: the updated pak index deliberately aliases one non-encoded entry under several paths, and the
+  last write wins on its `Path` — a C# behaviour the port has to keep.
 - **Some Utils are partial ports.** `MathUtils` ports the scalar helpers only (the `FVector`/`FQuat`
   conversions and `CubicCurve2D` wait on the Core/Math layer). `StringUtils` ports the ordinal
   substring helpers (culture-aware `StringComparison` overloads and the `Span<char>` overload have
@@ -433,7 +565,7 @@ These are noted inline in the headers where they occur:
   localization loading (`FTextLocalizationResource`), the full `UStruct`/`UClass`-aware `ConstructObject`
   traversal (a name-keyed `ObjectTypeRegistry` stands in for it), the custom-version providers
   (`FEditorObjectVersion` etc.; property readers currently assume modern), game-specific property readers
-  (Borderlands4/OuterWorlds2/…), the named-struct table in `FScriptStruct` (needs the rest of Core/Math — `FVector`/`FQuat`/… — plus engine structs; `FColor`/`FLinearColor` are done),
+  (Borderlands4/OuterWorlds2/…), the named-struct table in `FScriptStruct` (Core/Math is now done, so this waits only on the engine structs),
   further concrete `UExport` subclasses (`UStringTable`, `UDataTable`, `UCurveTable`, `UScriptStruct`, `UEnum`,
   `UFunction`, `UObjectRedirector`, `UBlueprintGeneratedClass`, `UUserDefinedStruct`, `UUserDefinedEnum`,
   `UCurveFloat`/`UCurveVector`/`UCurveLinearColor` so far; `UStruct`/`UClass`/`UCurveBase` ported but unregistered),

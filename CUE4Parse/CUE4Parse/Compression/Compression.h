@@ -44,6 +44,11 @@ namespace CUE4Parse::Compression
         // as C#'s DecompressorBuilder.Add does. `None` is handled internally and need not be registered.
         static void RegisterDecompressor(CompressionAlgorithm algorithm, DecompressFunc func);
 
+        // Registers the codecs that ship built into this port: LZ4, Zlib, and Gzip (the last two via the
+        // in-tree Inflate decoder). Called automatically at startup, mirroring C#'s default DecompressorBuilder.
+        // Oodle and Zstd are not built in — see OodleHelper / ZstdHelper to load their native libraries.
+        static void RegisterBuiltinDecompressors();
+
         // True if a codec is available for the algorithm (or it is None).
         static bool HasDecompressor(CompressionAlgorithm algorithm);
 
