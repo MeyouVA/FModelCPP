@@ -185,9 +185,9 @@ int main()
     CHECK(props[0].Name.Text() == "MyStruct" && props[0].PropertyType.Text() == "StructProperty");
     auto* structProp = dynamic_cast<StructProperty*>(props[0].Tag.get());
     CHECK(structProp != nullptr);
-    if (structProp && structProp->Value.Struct)
+    if (structProp && structProp->Value.AsFallback())
     {
-        auto& inner = structProp->Value.Struct->Properties;
+        auto& inner = structProp->Value.AsFallback()->Properties;
         CHECK(inner.size() == 1);
         auto* innerInt = inner.empty() ? nullptr : dynamic_cast<IntProperty*>(inner[0].Tag.get());
         CHECK(innerInt != nullptr && innerInt->Value == 7);
@@ -225,9 +225,9 @@ int main()
         {
             auto* sp = dynamic_cast<StructProperty*>(structArray->Value.Properties[i].get());
             CHECK(sp != nullptr);
-            if (sp && sp->Value.Struct && !sp->Value.Struct->Properties.empty())
+            if (sp && sp->Value.AsFallback() && !sp->Value.AsFallback()->Properties.empty())
             {
-                auto* e = dynamic_cast<IntProperty*>(sp->Value.Struct->Properties[0].Tag.get());
+                auto* e = dynamic_cast<IntProperty*>(sp->Value.AsFallback()->Properties[0].Tag.get());
                 CHECK(e != nullptr && e->Value == expected[i]);
             }
             else

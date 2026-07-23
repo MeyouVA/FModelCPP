@@ -246,12 +246,18 @@ static std::vector<uint8_t> BuildRichCurveFallback(float t0, float v0, float t1,
     AppendFName(keysValue, C_RichCurveKey);       // struct tag data: struct type
     for (int i = 0; i < 16; i++) keysValue.push_back(0); // struct guid
     keysValue.push_back(0);                       // inner tag guid flag
+    // "RichCurveKey" is in FScriptStruct's named-struct table, so each element is the raw 28-byte
+    // FRichCurveKey a cooked asset carries (3 mode bytes + 1 pad byte + 6 floats).
     const float kd[2][2] = {{t0, v0}, {t1, v1}};
     for (auto& e : kd)
     {
-        AppendFloatProperty(keysValue, C_Time, e[0]);
-        AppendFloatProperty(keysValue, C_Value, e[1]);
-        AppendFName(keysValue, C_None);           // key FStructFallback terminator
+        keysValue.push_back(0); // ERichCurveInterpMode::RCIM_Linear
+        keysValue.push_back(0); // ERichCurveTangentMode::RCTM_Auto
+        keysValue.push_back(0); // ERichCurveTangentWeightMode::RCTWM_WeightedNone
+        keysValue.push_back(0); // padding to the float alignment
+        AppendLE<float>(keysValue, e[0]);                    // Time
+        AppendLE<float>(keysValue, e[1]);                    // Value
+        for (int i = 0; i < 4; i++) AppendLE<float>(keysValue, 0.0f); // the four tangent fields
     }
 
     std::vector<uint8_t> body;
@@ -416,9 +422,9 @@ int main()
             {
                 auto* sp = dynamic_cast<StructProperty*>(cf->Properties[0].Tag.get());
                 CHECK(sp != nullptr);
-                if (sp && sp->Value.Struct)
+                if (sp && sp->Value.AsFallback())
                 {
-                    FRichCurve curve(*sp->Value.Struct);
+                    FRichCurve curve(*sp->Value.AsFallback());
                     CHECK(curve.Keys.size() == 2);
                     CHECK(std::fabs(curve.Eval(1.0f) - 8.0f) < 1e-4f);
                 }

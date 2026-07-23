@@ -39,8 +39,9 @@ namespace CUE4Parse::UE4::Objects::Engine::Curves
             InterpMode = hasByte ? static_cast<ERichCurveInterpMode>(byteVal)
                                  : ParseInterpMode(member, ERichCurveInterpMode::RCIM_Linear);
 
-        // Keys: an ArrayProperty of StructProperty(FSimpleCurveKey); each element is an FStructFallback (the
-        // named-struct table is deferred) holding tagged Time + Value floats.
+        // Keys: an ArrayProperty of StructProperty(FSimpleCurveKey). "SimpleCurveKey" is in the named-struct
+        // table, so a real asset yields the struct directly; data written as tagged Time + Value floats
+        // still resolves through the fallback bag.
         for (const auto& tag : data.Properties)
         {
             if (tag.Name.Text() != "Keys")
@@ -50,12 +51,19 @@ namespace CUE4Parse::UE4::Objects::Engine::Curves
                 for (const auto& elem : ap->Value.Properties)
                 {
                     const auto* sp = dynamic_cast<const StructProperty*>(elem.get());
-                    if (sp == nullptr || sp->Value.Struct == nullptr)
+                    if (sp == nullptr)
                         continue;
-                    const FStructFallback& kd = *sp->Value.Struct;
+                    if (const auto* typed = sp->Value.Get<FSimpleCurveKey>())
+                    {
+                        Keys.push_back(*typed);
+                        continue;
+                    }
+                    const auto* fallback = sp->Value.AsFallback();
+                    if (fallback == nullptr)
+                        continue;
                     FSimpleCurveKey key;
-                    key.Time = GetFloat(kd, "Time", 0.0f);
-                    key.Value = GetFloat(kd, "Value", 0.0f);
+                    key.Time = GetFloat(*fallback, "Time", 0.0f);
+                    key.Value = GetFloat(*fallback, "Value", 0.0f);
                     Keys.push_back(key);
                 }
             }

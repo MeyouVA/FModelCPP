@@ -165,10 +165,10 @@
 
   <div class="meters">
     <div class="meter">
-      <div class="top"><span class="name">CUE4Parse — parsing core</span><span class="pct">~54%</span></div>
-      <div class="sub">304 C++ files · 37 test suites green</div>
-      <div class="bar"><span style="width:54%"></span></div>
-      <p class="note">The bottom-up reading spine is complete through the tagged-property system. Measured against the reading path; by raw file count it's ~11% (the 1,799 C# files are inflated by a huge asset-type + Wwise long tail).</p>
+      <div class="top"><span class="name">CUE4Parse — parsing core</span><span class="pct">~65%</span></div>
+      <div class="sub">342 C++ files · 41 test suites green</div>
+      <div class="bar"><span style="width:65%"></span></div>
+      <p class="note">The bottom-up reading spine is complete through the tagged-property system, and both package formats (classic <code>.uasset</code> and Zen/IO Store) now load exports end to end. Measured against the reading path; by raw file count it's ~11% (the 1,799 C# files are inflated by a huge asset-type + Wwise long tail).</p>
     </div>
     <div class="meter">
       <div class="top"><span class="name">FModel — desktop app</span><span class="pct">~10%</span></div>
@@ -199,7 +199,7 @@
         <div class="card-head"><span>The spine — done</span><span class="tag done">10 layers</span></div>
         <ul class="list">
           <li><span class="li-mark"><span class="dot done"></span></span><div class="li-body"><div class="li-title">Readers layer</div><div class="li-desc"><code>FArchive</code>, byte / pointer / stream / big-endian / random-access + compressed proxy</div></div></li>
-          <li><span class="li-mark"><span class="dot done"></span></span><div class="li-body"><div class="li-title">Versions</div><div class="li-desc"><code>EGame</code>, <code>ObjectVersion</code>, <code>FPackageFileVersion</code>, <code>VersionContainer</code></div></div></li>
+          <li><span class="li-mark"><span class="dot done"></span></span><div class="li-body"><div class="li-title">Versions</div><div class="li-desc"><code>EGame</code>, <code>ObjectVersion</code>, <code>FPackageFileVersion</code>, <code>VersionContainer</code> (incl. the per-game Options / MapStructTypes tables)</div></div></li>
           <li><span class="li-mark"><span class="dot done"></span></span><div class="li-body"><div class="li-title">Compression codecs</div><div class="li-desc">Zlib/Gzip/LZ4 built-in (from-scratch DEFLATE + LZ4 block); Oodle/Zstd via runtime native-library load</div></div></li>
           <li><span class="li-mark"><span class="dot done"></span></span><div class="li-body"><div class="li-title">Core/Misc value structs</div><div class="li-desc"><code>FGuid</code>, <code>FDateTime</code>, <code>FEngineVersion</code>, <code>FSHAHash</code> …</div></div></li>
           <li><span class="li-mark"><span class="dot done"></span></span><div class="li-body"><div class="li-title">Core/Math — colors, vectors, geometry, bounds</div><div class="li-desc"><code>FColor</code>, <code>FLinearColor</code>, all vector types, <code>FQuat</code>/<code>FRotator</code>/<code>FMatrix</code>/<code>FTransform</code>/<code>FPlane</code>, and now <code>FBox</code>/<code>FBoxSphereBounds</code>/<code>FSphere</code>/<code>TRange</code> — every C# file bar <code>UnrealMathSSE</code></div></div></li>
@@ -221,10 +221,10 @@
           <ul class="list" style="padding:0; margin:0 -18px;">
             <li><span class="li-mark"><span class="dot done"></span></span><div class="li-body"><div class="li-title">Encryption / AES</div><div class="li-desc"><code>Aes</code> + <code>FAesKey</code> — AES-256 ECB written from scratch (C# gets it from the BCL), pinned to the FIPS-197 and NIST SP 800-38A vectors</div></div></li>
             <li><span class="li-mark"><span class="dot done"></span></span><div class="li-body"><div class="li-title">Pak container</div><div class="li-desc"><code>PakFileReader</code>, <code>FPakEntry</code>, <code>FPakInfo</code> — legacy, updated, flat and frozen indices; compressed + encrypted extraction. Per-game <code>GameTypes</code> hooks throw rather than guess</div></div></li>
-            <li><span class="li-mark"><span class="dot done"></span></span><div class="li-body"><div class="li-title">IO Store</div><div class="li-desc"><code>.utoc</code>/<code>.ucas</code> — <code>IoStoreReader</code>, toc resource, chunk resolution (incl. perfect hash), partitioned ucas, directory index. The Zen/IoPackage asset layer is the remaining half</div></div></li>
+            <li><span class="li-mark"><span class="dot done"></span></span><div class="li-body"><div class="li-title">IO Store</div><div class="li-desc"><code>.utoc</code>/<code>.ucas</code> — <code>IoStoreReader</code>, toc resource, chunk resolution (incl. perfect hash), partitioned ucas, directory index, container header, <code>IoGlobalData</code> and the <code>IoPackage</code> Zen asset layer</div></div></li>
             <li><span class="li-mark"><span class="dot done"></span></span><div class="li-body"><div class="li-title">Virtual file system</div><div class="li-desc"><code>GameFile</code>, <code>VfsEntry</code>, <code>IVfsReader</code>/<code>IAesVfsReader</code>, both abstract readers and <code>MountTo</code></div></div></li>
-            <li><span class="li-mark"><span class="dot done"></span></span><div class="li-body"><div class="li-title">FileProvider (concrete)</div><div class="li-desc"><code>DefaultFileProvider</code> — directory scan, register/mount/submit-key lifecycle, <code>FileProviderDictionary</code> read-order shadowing, <code>FixPath</code>. Config-ini + localization surfaces still deferred</div></div></li>
-            <li><span class="li-mark"><span class="dot pend"></span></span><div class="li-body"><div class="li-title">Mappings provider</div><div class="li-desc"><code>.usmap</code> — unversioned property parsing</div></div><span class="li-count">~12</span></li>
+            <li><span class="li-mark"><span class="dot done"></span></span><div class="li-body"><div class="li-title">FileProvider (concrete)</div><div class="li-desc"><code>DefaultFileProvider</code> — directory scan, register/mount/submit-key lifecycle, <code>FileProviderDictionary</code> read-order shadowing, <code>FixPath</code>, and the config-ini surface (<code>LoadIniConfigs</code>, <code>GameDisplayName</code>, <code>PostMount</code>) over a vendored <code>UE4Config</code> parser. Localization beyond the lookup table still deferred</div></div></li>
+            <li><span class="li-mark"><span class="dot done"></span></span><div class="li-body"><div class="li-title">Mappings provider</div><div class="li-desc"><code>.usmap</code> — <code>UsmapParser</code>, <code>TypeMappings</code>, the file/memory providers, and the <code>FUnversionedHeader</code>/<code>FIterator</code> unversioned property path they feed</div></div></li>
           </ul>
         </div>
 
@@ -332,12 +332,12 @@
     <p class="k">Each is a self-contained, testable unit — in the standing bottom-up order. Pick one per "continue".</p>
     <div class="next-grid">
       <div class="next-item">
-        <div class="h"><span class="n">core</span> IoPackage (Zen assets)</div>
-        <p>The UE5 asset format that lives inside IO Store: <code>FZenPackageSummary</code>, export bundles, <code>FPackageObjectIndex</code>, script objects + <code>IoGlobalData</code>. The container layer now hands over the bytes; this makes them load as packages.</p>
+        <div class="h"><span class="n">core</span> IO Store uncompressed-block reads</div>
+        <p>Found by running the stack over a real Satisfactory install: of 3000 packages, 2538 fail only for want of an Oodle decompressor, but 462 die with <em>"Read size is bigger than remaining archive length"</em>. Those chunks are stored uncompressed, so the block loop is mis-sizing something. First failing case: <code>Engine/Content/Animation/DefaultAnimCurveCompressionSettings.uasset</code>.</p>
       </div>
       <div class="next-item">
-        <div class="h"><span class="n">core</span> Mappings provider</div>
-        <p><code>.usmap</code> — unversioned property parsing. Every UE5 game needs it before exports deserialize; pairs naturally with the Zen work.</p>
+        <div class="h"><span class="n">core</span> <code>LoadVirtualPaths</code> + plugin manifests</div>
+        <p>The last unported piece of <code>AbstractFileProvider</code>: <code>.upluginmanifest</code>/<code>.uplugin</code> JSON, which is what makes <code>FixPath</code>'s virtual-root branch do anything for plugin content.</p>
       </div>
       <div class="next-item">
         <div class="h"><span class="n">app</span> ApplicationViewModel skeleton</div>
@@ -354,7 +354,7 @@
   <footer>
     <span>U:\Programs\AI\Claude\FModelCPP</span>
     <span>MSVC + Ninja · Qt 6.8.3</span>
-    <span>37 test suites green</span>
+    <span>41 test suites green</span>
     <span>faithful C#→C++ · bottom-up</span>
   </footer>
 </div>

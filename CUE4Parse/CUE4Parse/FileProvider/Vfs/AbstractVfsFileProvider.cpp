@@ -4,7 +4,9 @@
 #include <stdexcept>
 
 #include "../Objects/OsGameFile.h"
+#include "../../UE4/Assets/IPackage.h"
 #include "../../UE4/Exceptions/InvalidAesKeyException.h"
+#include "../../UE4/IO/Objects/FIoStoreEntry.h"
 #include "../../UE4/Pak/PakFileReader.h"
 #include "../../UE4/Readers/FStreamArchive.h"
 #include "../../UE4/Versions/EGame.h"
@@ -109,7 +111,7 @@ namespace CUE4Parse::FileProvider::Vfs
         const std::vector<std::shared_ptr<AbstractAesVfsReader>> unloaded = _unloadedVfs;
         for (const auto& reader : unloaded)
         {
-            // VerifyGlobalData(reader) arrives with the IO Store layer. TODO.
+            VerifyGlobalData(*reader);
 
             if ((reader->IsEncrypted() && CustomEncryption == nullptr) || !reader->HasDirectoryIndex())
                 continue;
@@ -146,7 +148,7 @@ namespace CUE4Parse::FileProvider::Vfs
 
                 if (reader->Game() == GAME_FragPunk && Utils::Contains(reader->Name(), "global"))
                     reader->AesKey() = key;
-                // VerifyGlobalData(reader) arrives with the IO Store layer. TODO.
+                VerifyGlobalData(*reader);
 
                 if (!reader->HasDirectoryIndex())
                     continue;
@@ -231,6 +233,115 @@ namespace CUE4Parse::FileProvider::Vfs
         }
     }
 
+    void AbstractVfsFileProvider::VerifyGlobalData(AbstractAesVfsReader& reader)
+    {
+        if (_globalData != nullptr) return;
+        auto* ioStoreReader = dynamic_cast<UE4::IO::IoStoreReader*>(&reader);
+        if (ioStoreReader == nullptr) return;
+
+        const auto& name = ioStoreReader->Name();
+        const auto ignoreCase = Utils::StringComparer::OrdinalIgnoreCase();
+        if (ignoreCase.Equals(name, "global.utoc") || ignoreCase.Equals(name, "global_console_win.utoc"))
+        {
+            // C# lets a failure here propagate out of Mount/SubmitKeys; both call sites already swallow.
+            _globalData = std::make_unique<UE4::IO::IoGlobalData>(*ioStoreReader);
+        }
+    }
+
+    UE4::Assets::IPackage& AbstractVfsFileProvider::LoadPackage(const UE4::IO::Objects::FPackageId& id)
+    {
+        const auto& byId = Files.ById();
+        const auto it = byId.find(id);
+        if (it == byId.end())
+            throw std::out_of_range("There is no package with the id " + id.ToString());
+        return AbstractFileProvider::LoadPackage(*it->second);
+    }
+
+    UE4::Assets::IPackage* AbstractVfsFileProvider::TryLoadPackage(const UE4::IO::Objects::FPackageId& id)
+    {
+        const auto& byId = Files.ById();
+        const auto it = byId.find(id);
+        return it != byId.end() ? AbstractFileProvider::TryLoadPackage(*it->second) : nullptr;
+    }
+
+    const UE4::IO::Objects::FFilePackageStoreEntry* AbstractVfsFileProvider::TryFindStoreEntry(
+        const UE4::IO::Objects::FPackageId& packageId) const
+    {
+        for (const auto& reader : _mountedVfs)
+        {
+            auto* ioReader = dynamic_cast<UE4::IO::IoStoreReader*>(reader.get());
+            if (ioReader == nullptr) continue;
+            auto* header = ioReader->ContainerHeader();
+            if (header == nullptr || header->StoreEntries.empty()) continue;
+
+            for (size_t i = 0; i < header->PackageIds.size(); i++)
+            {
+                if (!(header->PackageIds[i] == packageId)) continue;
+                if (i >= header->StoreEntries.size()) break;
+                return &header->StoreEntries[i];
+            }
+        }
+        return nullptr;
+    }
+
+    std::vector<std::shared_ptr<Objects::GameFile>> AbstractVfsFileProvider::ScanForPackageRefs(Objects::GameFile& asset)
+    {
+        std::vector<std::shared_ptr<Objects::GameFile>> refList;
+        if (dynamic_cast<UE4::IO::Objects::FIoStoreEntry*>(&asset) == nullptr || !asset.IsUePackage())
+            return refList;
+
+        const UE4::Assets::IPackage& package = AbstractFileProvider::LoadPackage(asset);
+        const auto id = UE4::IO::Objects::FPackageId::FromName(package.GetName());
+        for (const auto& reader : _mountedVfs)
+        {
+            auto* ioReader = dynamic_cast<UE4::IO::IoStoreReader*>(reader.get());
+            if (ioReader == nullptr) continue;
+            auto* header = ioReader->ContainerHeader();
+            if (header == nullptr || header->StoreEntries.empty()) continue;
+
+            for (size_t i = 0; i < header->StoreEntries.size() && i < header->PackageIds.size(); i++)
+            {
+                const auto& imported = header->StoreEntries[i].ImportedPackages;
+                if (std::find(imported.begin(), imported.end(), id) == imported.end()) continue;
+                const auto it = ioReader->PackageIdIndex.find(header->PackageIds[i]);
+                if (it != ioReader->PackageIdIndex.end()) refList.push_back(it->second);
+            }
+        }
+        return refList;
+    }
+
+    void AbstractVfsFileProvider::PostMount()
+    {
+        const bool workingAes = LoadIniConfigs();
+        if (workingAes || !DefaultGame.EncryptionKeyGuid.has_value()) return;
+
+        // C# groups the suspect readers by key guid and drops the group whose guid matches DefaultGame's.
+        // Only readers that mounted *without* being encrypted themselves yet hold encrypted files can be
+        // wrong in this way.
+        const FGuid& guid = *DefaultGame.EncryptionKeyGuid;
+        std::vector<std::shared_ptr<AbstractAesVfsReader>> stillMounted;
+        bool unmountedAny = false;
+        for (const auto& reader : _mountedVfs)
+        {
+            if (reader->IsEncrypted() || reader->EncryptedFileCount() <= 0 ||
+                !(reader->EncryptionKeyGuid() == guid))
+            {
+                stillMounted.push_back(reader);
+                continue;
+            }
+
+            _unloadedVfs.push_back(reader);
+            unmountedAny = true;
+            if (VfsUnmounted) VfsUnmounted(*reader, static_cast<int>(_unloadedVfs.size()));
+        }
+
+        if (!unmountedAny) return;
+
+        _mountedVfs = std::move(stillMounted);
+        _keys.erase(guid);
+        _requiredKeys.insert(guid);
+    }
+
     void AbstractVfsFileProvider::UnloadAllVfs()
     {
         Files.Clear();
@@ -266,5 +377,6 @@ namespace CUE4Parse::FileProvider::Vfs
         _mountedVfs.clear();
         _keys.clear();
         _requiredKeys.clear();
+        _globalData.reset();
     }
 }

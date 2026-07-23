@@ -14,8 +14,8 @@
 //     archive still cannot abort the whole mount pass.
 //   * The .utoc (IoStoreReader) and .uondemandtoc register branches, VerifyGlobalData/GlobalData/FilesById,
 //     LoadPackage(FPackageId), ScanForPackageRefs and TryFindStoreEntry arrive with the IO Store layer;
-//     PostMount needs the config-ini layer; UnloadNonStreamedVfs's StreamedGameFile check is reduced to
-//     OsGameFile (StreamedGameFile is unported). TODO.
+//     UnloadNonStreamedVfs's StreamedGameFile check is reduced to OsGameFile (StreamedGameFile is
+//     unported). TODO.
 //   * The RegisterVfs stream-array overloads collapse into RegisterVfs(shared_ptr<FArchive>): C#'s five
 //     overloads all exist to wrap OS/stream handles into archives, which callers do directly here.
 //   * The FragPunk special case in SubmitKeys ("global" containers get the key pre-assigned) is kept.
@@ -32,6 +32,7 @@
 
 #include "IVfsFileProvider.h"
 #include "../AbstractFileProvider.h"
+#include "../../UE4/IO/IoGlobalData.h"
 #include "../../UE4/IO/IoStoreReader.h"
 #include "../../UE4/VirtualFileSystem/AbstractAesVfsReader.h"
 
@@ -49,6 +50,24 @@ namespace CUE4Parse::FileProvider::Vfs
 
         const std::map<FGuid, std::shared_ptr<FAesKey>, FGuidLess>& Keys() const { return _keys; }
         const std::set<FGuid, FGuidLess>& RequiredKeys() const { return _requiredKeys; }
+
+        // C#'s GlobalData / FilesById.
+        UE4::IO::IoGlobalData* GlobalData() const override { return _globalData.get(); }
+        const std::map<UE4::IO::Objects::FPackageId, std::shared_ptr<Objects::GameFile>>& FilesById() const
+        { return Files.ById(); }
+
+        // C#'s LoadPackage(FPackageId) / TryLoadPackage(FPackageId): the IO Store package with that id.
+        UE4::Assets::IPackage& LoadPackage(const UE4::IO::Objects::FPackageId& id);
+        UE4::Assets::IPackage* TryLoadPackage(const UE4::IO::Objects::FPackageId& id) override;
+        using AbstractFileProvider::LoadPackage;
+        using AbstractFileProvider::TryLoadPackage;
+
+        // C#'s TryFindStoreEntry: the store entry for `packageId` in the first mounted container that has one.
+        const UE4::IO::Objects::FFilePackageStoreEntry* TryFindStoreEntry(
+            const UE4::IO::Objects::FPackageId& packageId) const override;
+
+        // C#'s ScanForPackageRefs: every mounted IO Store file whose store entry imports `asset`'s package id.
+        std::vector<std::shared_ptr<Objects::GameFile>> ScanForPackageRefs(Objects::GameFile& asset);
 
         int LooseFileCount = 0;
 
@@ -90,6 +109,11 @@ namespace CUE4Parse::FileProvider::Vfs
         std::shared_ptr<Objects::GameFile> TryGetGameFile(const std::string& path, const std::string& archiveName,
                                                           const Utils::StringComparer& comparison = Utils::StringComparer::Ordinal());
 
+        // C#'s PostMount: loads the ini configs and, when DefaultGame did not decrypt into a usable
+        // GeneralProjectSettings section, unmounts every archive that was mounted with the key its guid names
+        // (the key was wrong; the archive read as garbage) and puts that guid back on the required list.
+        void PostMount();
+
         void UnloadAllVfs();
         void UnloadNonStreamedVfs();
 
@@ -103,6 +127,11 @@ namespace CUE4Parse::FileProvider::Vfs
         // Registers a constructed reader: tracks its key requirement, hands it the custom-encryption hook,
         // and fires VfsRegistered.
         void PostLoadReader(std::shared_ptr<AbstractAesVfsReader> reader, bool isConcurrent = true);
+
+        // C#'s VerifyGlobalData: reads IoGlobalData off the first global.utoc / global_console_win.utoc seen.
+        void VerifyGlobalData(AbstractAesVfsReader& reader);
+
+        std::unique_ptr<UE4::IO::IoGlobalData> _globalData;
 
         std::vector<std::shared_ptr<AbstractAesVfsReader>> _unloadedVfs;
         std::vector<std::shared_ptr<AbstractAesVfsReader>> _mountedVfs;

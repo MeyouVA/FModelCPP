@@ -7,13 +7,14 @@
 namespace CUE4Parse::UE4::Assets::Objects::Properties
 {
     StructProperty::StructProperty(FAssetArchive& Ar, const FPropertyTagData* tagData, ReadType type)
-        : Value(Ar, tagData != nullptr ? tagData->StructType : std::nullopt, type)
+        : Value(Ar, tagData != nullptr ? tagData->StructType : std::nullopt,
+                tagData != nullptr ? tagData->Struct : nullptr, type)
     {
     }
 
     std::string StructProperty::ToString() const
     {
-        if (!Value.Struct)
+        if (!Value.StructType)
             return "(null struct)";
 
         // Mirror C#: Value.ToString() ends with ")"; splice ", StructProperty" before that closing paren.

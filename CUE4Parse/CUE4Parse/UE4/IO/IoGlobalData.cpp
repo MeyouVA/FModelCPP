@@ -26,7 +26,7 @@ namespace CUE4Parse::UE4::IO
             metaAr = std::make_unique<FByteArchive>(
                 "ScriptObjects",
                 globalReader.Read(FIoChunkId(0, 0, static_cast<uint8_t>(EIoChunkType5::ScriptObjects))),
-                globalReader.Versions);
+                globalReader.GetVersions());
             GlobalNameMap = FNameEntrySerialized::LoadNameBatch(*metaAr);
         }
         else // UE4.26+
@@ -41,13 +41,13 @@ namespace CUE4Parse::UE4::IO
 
             FByteArchive nameAr("LoaderGlobalNames",
                 globalReader.Read(FIoChunkId(0, 0, static_cast<uint8_t>(EIoChunkType::LoaderGlobalNames))),
-                globalReader.Versions);
+                globalReader.GetVersions());
             GlobalNameMap = FNameEntrySerialized::LoadNameBatch(nameAr, nameCount);
 
             metaAr = std::make_unique<FByteArchive>(
                 "LoaderInitialLoadMeta",
                 globalReader.Read(FIoChunkId(0, 0, static_cast<uint8_t>(EIoChunkType::LoaderInitialLoadMeta))),
-                globalReader.Versions);
+                globalReader.GetVersions());
         }
 
         const int numScriptObjects = metaAr->Read<int32_t>();

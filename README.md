@@ -104,7 +104,7 @@ foundation** everything else builds on:
 | Engine/game enum | `UE4/Versions/EGame.cs` | `UE4/Versions/EGame.{h,cpp}` |
 | Object version enums | `UE4/Versions/ObjectVersion.cs` | `UE4/Versions/ObjectVersion.h` |
 | Package file version | `UE4/Versions/ObjectVersion.cs` | `UE4/Versions/FPackageFileVersion.h` |
-| Version container | `UE4/Versions/VersionContainer.cs` | `UE4/Versions/VersionContainer.h` (core only) |
+| Version container | `UE4/Versions/VersionContainer.cs` | `UE4/Versions/VersionContainer.{h,cpp}` |
 | Texture platform | `UE4/Assets/.../ETexturePlatform.cs` | `UE4/Assets/Exports/Texture/ETexturePlatform.h` |
 | Parser exceptions | `UE4/Exceptions/ParserException.cs` | `UE4/Exceptions/ParserException.{h,cpp}` |
 | FName (full) | `UE4/Objects/UObject/FName.cs` | `UE4/Objects/UObject/FName.h` |
@@ -152,7 +152,8 @@ foundation** everything else builds on:
 | Property tag | `UE4/Assets/Objects/FPropertyTag.cs` | `UE4/Assets/Objects/FPropertyTag.{h,cpp}` (classic layout) |
 | Property value base | `UE4/.../Properties/FPropertyTagType.cs` | `UE4/Assets/Objects/Properties/FPropertyTagType.{h,cpp}` |
 | Scalar properties | `UE4/.../Properties/*Property.cs` | `UE4/Assets/Objects/Properties/*Property.h` (13 scalar types) |
-| Struct value / fallback | `UE4/Assets/Objects/FScriptStruct.cs`, `FStructFallback.cs` | `UE4/Assets/Objects/FScriptStruct.{h,cpp}`, `FStructFallback.{h,cpp}` (fallback path) |
+| Struct value / fallback | `UE4/Assets/Objects/FScriptStruct.cs`, `FStructFallback.cs` | `UE4/Assets/Objects/FScriptStruct.{h,cpp}` (named-struct table for the ported types), `FStructFallback.{h,cpp}` |
+| Config ini parser | *(the `Infrablack.UE4Config` NuGet dependency)* | `UE4Config/Parsing/{ConfigIni.{h,cpp},IniToken.h}` (read path, vendored) |
 | Array value | `UE4/Assets/Objects/UScriptArray.cs` | `UE4/Assets/Objects/UScriptArray.{h,cpp}` |
 | Map / Set value | `UE4/Assets/Objects/UScript{Map,Set}.cs` | `UE4/Assets/Objects/UScript{Map,Set}.{h,cpp}` |
 | Struct/Array/Enum properties | `UE4/.../Properties/{Struct,Array,Enum}Property.cs` | `UE4/Assets/Objects/Properties/{Struct,Array,Enum}Property.{h,cpp}` |
@@ -310,16 +311,62 @@ These are noted inline in the headers where they occur:
   ~30 per-game decryptors from `CUE4Parse.GameTypes` (all unported). This is an explicit gap, not silent
   corruption: an encrypted archive for such a game fails the mount-point probe and never mounts, rather than
   decrypting to wrong bytes. Mount/SubmitKeys also run serially — C# fans them out on `Task.Run`; the port
-  has no threading layer. Deferred with their layers: `PostMount`/`LoadIniConfigs` (config-ini),
-  `GameDisplayName`, `LoadVirtualPaths` (plugin-manifest JSON), localization beyond the lookup table, and
-  `IoGlobalData`/`VerifyGlobalData` (Zen).
-- **The IO Store container layer is ported; the Zen asset layer on top of it is not.** `IoStoreReader` mounts,
+  has no threading layer. `VerifyGlobalData`/`GlobalData`, `FilesById`, `LoadPackage(FPackageId)`,
+  `TryFindStoreEntry`, `ScanForPackageRefs`, `LoadIniConfigs` and `PostMount` ARE ported. Deferred with
+  their layers: `LoadVirtualPaths` (plugin-manifest JSON) and localization beyond the lookup table.
+- **The config-ini layer is ported, parser included.** C# gets `ConfigIni` from the `Infrablack.UE4Config`
+  NuGet package; there is no such package for C++, so the read path it actually uses is vendored under
+  `UE4Config/Parsing/` with the same namespace and type names — sections, the token hierarchy
+  (comment/whitespace/text/instruction), the five instruction kinds (`Key=`, `+`, `.`, `-`, `!`), per-line
+  line-ending detection and `FindPropertyInstructions`. Its behaviour was verified token-by-token against the
+  real 0.7.2.97 assembly, and `test_config_ini` encodes that as ground truth (down to `#` *not* being a
+  comment marker, `!Key=Val` taking the whole remainder as its key, and an indented `+Key=1` demoting to a
+  plain `Set`). On top of it: `CustomConfigIni DefaultGame`/`DefaultEngine`, `LoadIniConfigs` (which also
+  seeds `InternationalizationDictionary::InitFromIni` and `DefaultLightUnit`), `GameDisplayName`
+  (NSLOCTEXT/INVTEXT unwrapping with the `ProjectName` fallback) and `AbstractVfsFileProvider::PostMount`,
+  which unmounts the archives whose AES key turned out to be wrong. One arm is deferred: a display name that
+  indirects through `LOCTABLE(...)` needs `UStringTable` object loading. `TODO` at that site.
+- **`VersionContainer` carries its two per-game lookup tables.** `InitOptions` builds the 20 named booleans
+  the readers branch on (engine-version thresholds plus the per-game carve-outs — `GAME_DeltaForce` and
+  `GAME_ArenaBreakoutMobile` for `RawIndexBuffer`, `GAME_UE4_25_Plus` for skeletal ray-tracing data,
+  `GAME_Back4Blood` for `bVisibleInRayTracing`, `GAME_GearsOfWar4`/`GAME_TEKKEN7` for nav collision, and the
+  five games that ship 4.25+ sound waves without audio streaming), and `InitMapStructTypes` builds the
+  property-name → key/value struct type table. Both are rebuilt whenever `Game` or `Platform` is reassigned,
+  with the constructor's override maps re-applied on top — the shape `AppSettings.json`'s per-game
+  `"Versioning": { CustomVersions, Options, MapStructTypes }` block feeds. Three readers consume them:
+  `ByteProperty`'s MAP-mode width, `FScriptStruct`'s `Vector_NetQuantize*` arms and `UScriptMap`'s key/value
+  type substitution. Deliberate differences: the indexer getter throws on an unknown option like C#'s
+  `Dictionary` rather than defaulting to false; `MapStructTypes` values are a pair of strings, with `""`
+  standing in for C#'s null (only `IsNullOrEmpty` is ever tested); the override tables are plain maps, since
+  C# only iterates them; and `ICloneable.Clone()` is dropped in favour of the implicit copy constructor.
+- **The IO Store layer is ported end to end — container *and* Zen assets.** `IoStoreReader` mounts,
   resolves chunks (perfect-hash with overflow fallback included, comparing `GetHashCode`s exactly as C# does),
-  splits partitioned `.ucas` sets and extracts through the block loop — but `FIoContainerHeader`,
-  `IoGlobalData` and `IoPackage` belong to the Zen asset format and are deferred; `ContainerHeader()` and
-  `LoadPackage` on an `FIoStoreEntry` throw naming that gap. The TheFinals/ArcRaiders and NFS Mobile toc
+  splits partitioned `.ucas` sets and extracts through the block loop; `ContainerHeader()` is a real lazy
+  accessor over the container-header chunk, `IoGlobalData` reads the global name batch + script objects off
+  `global.utoc`, and `IoPackage` reads a Zen package (both the UE5 `FZenPackageSummary` and the UE4.26-4.27
+  `FPackageSummary` paths) and deserializes its exports. The TheFinals/ArcRaiders and NFS Mobile toc
   obfuscation IS ported (self-contained hardcoded-key AES, not GameTypes); eBaseballProSpirit extraction
   throws (needs GameTypes' trailer arithmetic).
+- **Unversioned properties + the `.usmap` mappings provider are ported.** `UsmapParser` reads the whole
+  container (magic/version, optional package versioning, Oodle/Brotli/Zstd compression, name LUT, enums,
+  structs) into a `TypeMappings`; `AbstractFileProvider::MappingsContainer` feeds it to
+  `IPackage::Mappings()`, and `UObject::DeserializePropertiesUnversioned` drives `FUnversionedHeader` +
+  `FIterator` over it — zero-masked values produce a `ReadType::ZERO` tag that reads no bytes. Deliberate
+  differences: `TypeMappings` is `shared_ptr`-owned (a `Struct` holds a back-pointer to it, so its address
+  must be stable); C#'s `Lazy<Struct?> Super` becomes a cached `Super()` resolve; `PropertyType`/`PropertyInfo`
+  are `shared_ptr` so a cloned array-element `PropertyInfo` shares its descriptor exactly as C# does.
+- **`IoPackage` deliberate differences.** C#'s `AbstractUePackage : UObject` base is not ported, so
+  `IoPackage` implements `IPackage` directly (like `Package`) and repeats the small
+  `ConstructObject`/`DeserializeObject` helpers. Export loading is lazy only: the export-bundle walk records
+  each export's `(position, newPos)` and `GetExportObject(i)` constructs + deserializes on first use.
+  `ImportedPackagesAllVersions` (C#'s "search all previous versions" fallback in `ResolveObjectIndex`) needs
+  `IFileProvider.TryLoadPackages`, which is not ported, so a package import resolves only against the
+  directly imported package. `ubulk`/`uptnl` payloads are not attached (`FAssetArchive`'s payload subsystem
+  is still deferred). `ResolvedScriptObject::Object` IS ported (a cached `UScriptClass`) because unversioned
+  deserialization resolves an export's class through it; its `Class` stays null (`ResolvedLoadedObject` is
+  unported). C# reads the import/export maps off the *base* archive after seeking the asset archive — which
+  only works because C#'s `FAssetArchive` delegates `Position` to its base — so this port reads both through
+  the asset archive.
 - **Some Utils are partial ports.** `MathUtils` ports the scalar helpers only (the `FVector`/`FQuat`
   conversions and `CubicCurve2D` wait on the Core/Math layer). `StringUtils` ports the ordinal
   substring helpers (culture-aware `StringComparison` overloads and the `Span<char>` overload have
@@ -483,8 +530,9 @@ These are noted inline in the headers where they occur:
   reads its properties via `FPropertyTag` (classic pre-UE5 tag layout) → `FPropertyTagData` (type descriptor)
   → `FPropertyTagType::ReadPropertyTagType` (the type→reader factory), then the trailing optional `ObjectGuid`.
   A scalar subset of property types is ported (Bool/Byte/Int8/Int16/Int/Int64/UInt16/UInt32/UInt64/Float/
-  Double/Name/Str). Deliberate differences: the **unversioned** property path (`FUnversionedHeader` +
-  mappings provider) throws for now; the UE5 `PROPERTY_TAG_COMPLETE_TYPE_NAME` tag layout throws; the
+  Double/Name/Str). The **unversioned** property path (`FUnversionedHeader` + the `.usmap` mappings provider)
+  is now ported too — see the IO Store section above. Deliberate differences: the UE5
+  `PROPERTY_TAG_COMPLETE_TYPE_NAME` tag layout throws; the
   reflection-driven `GetValue<T>`/`PropertyUtil.GetOrDefault<T>` accessors and the JSON `WriteJson` path are
   omitted (consumers read the `Properties` list and `dynamic_cast` a tag's value); `GenericValue` is dropped.
   The tagged-property value set is now complete except for game-specific readers (Borderlands4/OuterWorlds2/…),
@@ -493,10 +541,16 @@ These are noted inline in the headers where they occur:
   types `FScriptStruct`, `FStructFallback`, `UScriptArray`). A struct value reads recursively as a bag of
   tagged properties (`FStructFallback` → `DeserializePropertiesTagged`); an array reads its element count then
   each element via the same `ReadPropertyTagType` factory, including the classic `INNER_ARRAY_TAG_INFO` inline
-  tag that carries a struct array's element type. Deliberate differences: `FScriptStruct`'s ~200-entry
-  named-struct switch (`FVector`/`FGuid`/`FColor`/…) is **entirely deferred** — every struct takes the C#
-  `default:` `FStructFallback` path until the Core/Math + engine struct types are ported, so `StructType` is a
-  concrete `FStructFallback` rather than an `IUStruct` base. `UScriptArray`'s `InnerTypeData` paths (unversioned
+  tag that carries a struct array's element type. `FScriptStruct`'s named-struct switch is now ported for
+  every struct type the port has (`FVector`/`FGuid`/`FColor`/`FPlane`/`FQuat`/`FRotator`/`FSphere`/`FMatrix`/
+  `FSoftObjectPath`/the `TIntVector` family/the curve keys/…); the rest still take the C# `default:`
+  `FStructFallback` arm. Because `IUStruct` is deliberately an empty non-virtual marker here (so the value
+  structs stay trivially copyable for `FArchive::Read<T>`), it cannot be C#'s polymorphic `StructType` slot:
+  the value is boxed in a small `IUStructHolder` and read back with `Get<T>()` / `AsFallback()`. Still
+  deferred: the `FMaterialInput`/`FExpressionInput`, MovieScene/Niagara/PCG/StateTree/cloth/instanced-struct
+  families, `FGameplayTagContainer`, the `FPerPlatform*` set, and every per-game arm. The
+  `Vector_NetQuantize*` arms branch on the `Vector_NetQuantize_AsStruct` option, so a UE5 game reads them as a
+  tagged property bag and everything older as a bare `FVector`. `UScriptArray`'s `InnerTypeData` paths (unversioned
   / RAW / pre-UE4 / UE5 complete-type-name) and the DaysGone size heuristic are deferred with their layers.
   `EnumProperty` resolves an index to `"EnumName::index"` (serialized-UEnum and mappings resolution deferred),
   and its unversioned/RAW underlying-numeric path falls back to a single byte. `StructProperty`/`ArrayProperty`
@@ -508,9 +562,12 @@ These are noted inline in the headers where they occur:
   object property reads an `FPackageIndex`. Deliberate differences: C#'s `UScriptMap`
   `Dictionary<FPropertyTagType, FPropertyTagType?>` becomes an **ordered vector of `unique_ptr` pairs** —
   `FPropertyTagType` has no C++ hash/equality and the reader only needs insertion order (a null key still falls
-  back to a synthetic `StrProperty "UNK_Entry_i"`). The pre-`PROPERTY_TAG_SET_MAP_SUPPORT` game-specific
-  key/value/inner type inference, the `MapStructTypes` table (`InnerTypeData`/`ValueTypeData`), and the many
-  game-specific set `InnerTypeData` inferences are deferred (struct keys/values/elements still read via
+  back to a synthetic `StrProperty "UNK_Entry_i"`). `UScriptMap` applies the `Versions.MapStructTypes` table,
+  which names the key/value struct type for property names whose tag does not carry one (the MovieScene and
+  Niagara maps); C# writes the resolved descriptors back onto the caller's `FPropertyTagData`, but that
+  descriptor is shared across every read of the property, so the port applies them locally instead. The
+  pre-`PROPERTY_TAG_SET_MAP_SUPPORT` game-specific key/value/inner type inference and the many
+  game-specific set `InnerTypeData` inferences are deferred (struct elements still read via
   `FStructFallback`). `ObjectProperty`'s game-specific reader special cases (`FLevelSaveRecordArchive` string
   form, `FOW2ObjectsArchive`) are omitted. All `TODO`.
 - **The soft / object-ish property types are started** (`SoftObjectProperty`, `WeakObjectProperty`,
@@ -584,18 +641,16 @@ These are noted inline in the headers where they occur:
   bare `Objects::UObject::X` written *inside* `namespace …::Assets` now resolves to `Assets::Objects`, not
   `UE4::Objects`. Such references (in `IPackage`, `FAssetArchive`, `Package`, `ResolvedObject`) are now fully
   qualified as `CUE4Parse::UE4::Objects::UObject::X`.
-- **Not yet ported** (arrive with their layers): the unversioned-property path + mappings provider, the
-  dependency-graph `ExportLoader` (non-lazy) loading path, the concrete `IFileProvider` (`DefaultFileProvider`
-  + the VFS/`GameFile` layer; only a minimal in-memory-testable interface exists) with its `.locres`
+- **Not yet ported** (arrive with their layers): the
+  dependency-graph `ExportLoader` (non-lazy) loading path, `.locres`
   localization loading (`FTextLocalizationResource`), the full `UStruct`/`UClass`-aware `ConstructObject`
   traversal (a name-keyed `ObjectTypeRegistry` stands in for it), the custom-version providers
   (`FEditorObjectVersion` etc.; property readers currently assume modern), game-specific property readers
-  (Borderlands4/OuterWorlds2/…), the named-struct table in `FScriptStruct` (Core/Math is now done, so this waits only on the engine structs),
+  (Borderlands4/OuterWorlds2/…), the named-struct table entries in `FScriptStruct` whose struct types are not ported yet,
   further concrete `UExport` subclasses (`UStringTable`, `UDataTable`, `UCurveTable`, `UScriptStruct`, `UEnum`,
   `UFunction`, `UObjectRedirector`, `UBlueprintGeneratedClass`, `UUserDefinedStruct`, `UUserDefinedEnum`,
-  `UCurveFloat`/`UCurveVector`/`UCurveLinearColor` so far; `UStruct`/`UClass`/`UCurveBase` ported but unregistered),
-  `IoPackage` (IO Store), and
-  `VersionContainer` Options/MapStructTypes tables. Marked with `TODO` at their sites.
+  `UCurveFloat`/`UCurveVector`/`UCurveLinearColor` so far; `UStruct`/`UClass`/`UCurveBase` ported but unregistered).
+  Marked with `TODO` at their sites.
 
 ## Build
 

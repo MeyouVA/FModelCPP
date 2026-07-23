@@ -3,9 +3,12 @@
 // families all concrete providers share.
 //
 // Deliberate differences from C#:
-//   * The config-ini surface (CustomConfigIni DefaultGame/DefaultEngine, LoadIniConfigs, GameDisplayName,
-//     DefaultLightUnit) needs the unported UE4Config layer. TODO with it — PostMount's key verification
-//     depends on it too.
+//   * The config-ini surface IS ported (CustomConfigIni DefaultGame/DefaultEngine, LoadIniConfigs,
+//     GameDisplayName, DefaultLightUnit) over the vendored UE4Config parser (see UE4Config/Parsing/IniToken.h).
+//     Two arms of C#'s LoadIniConfigs are not: the ConsoleVariables toggles write into
+//     `Versions[<cvar>]`, and VersionContainer's per-game Options table is not ported (see
+//     VersionContainer.h); and GameDisplayName's LOCTABLE(...) branch needs UStringTable object loading, so a
+//     display name that indirects through a string table stays empty. TODO with each.
 //   * LoadVirtualPaths needs UPluginManifest/UPluginDescriptor JSON parsing; deferred. VirtualPaths itself
 //     IS ported because FixPath consults it (it just stays empty until then). TODO.
 //   * The localization surface beyond the Internationalization lookup table (ChangeCulture / LoadLocalization
@@ -20,8 +23,8 @@
 //     alive; here the provider caches the loaded package (plus the archives it reads from) by game-file
 //     path and hands out non-owning pointers/references — the C++ Package requires its archives to outlive
 //     it, and the provider is the natural owner. Loaded packages live until the provider dies.
-//   * LoadPackage's FIoStoreEntry branch (IoPackage) is deferred with the IO Store asset layer; it throws
-//     naming the gap rather than misreading a Zen package as a classic one. TODO.
+//   * LoadPackage handles all three game-file kinds: an FIoStoreEntry on a VFS provider becomes an IoPackage
+//     (built over its container header), everything else a classic Package.
 #pragma once
 
 #include <map>
@@ -35,13 +38,25 @@
 #include "Objects/GameFile.h"
 #include "Vfs/FileProviderDictionary.h"
 #include "../UE4/Assets/IPackage.h"
+#include "../UE4/Objects/Core/Misc/FGuid.h"
+#include "../UE4/Objects/Engine/ELightUnits.h"
 #include "../UE4/Versions/VersionContainer.h"
+#include "../UE4Config/Parsing/ConfigIni.h"
 #include "../Utils/StringComparer.h"
 
 namespace CUE4Parse::UE4::Readers { class FArchive; }
 
 namespace CUE4Parse::FileProvider
 {
+    // C#'s CustomConfigIni: a ConfigIni that remembers which archive it came out of.
+    class CustomConfigIni : public UE4Config::Parsing::ConfigIni
+    {
+    public:
+        std::optional<UE4::Objects::Core::Misc::FGuid> EncryptionKeyGuid;
+
+        explicit CustomConfigIni(std::string name) : ConfigIni(std::move(name)) {}
+    };
+
     class AbstractFileProvider : public virtual IFileProvider
     {
     public:
@@ -56,6 +71,10 @@ namespace CUE4Parse::FileProvider
         // Virtual root -> plugin directory, filled by LoadVirtualPaths (deferred; stays empty until then).
         std::map<std::string, std::string, Utils::StringComparer> VirtualPaths;
         std::map<std::string, std::string, Utils::StringComparer> TextureCachePaths;
+        CustomConfigIni DefaultGame{"DefaultGame"};
+        CustomConfigIni DefaultEngine{"DefaultEngine"};
+
+        UE4::Objects::Engine::ELightUnits DefaultLightUnit = UE4::Objects::Engine::ELightUnits::Unitless;
 
         const UE4::Versions::VersionContainer& GetVersions() const override { return Versions; }
         InternationalizationDictionary& GetInternationalization() override { return Internationalization; }
@@ -65,6 +84,10 @@ namespace CUE4Parse::FileProvider
         // C#'s lazily-computed ProjectName: the first .uproject's root segment, else the first plausible
         // game root, with the MidnightSuns -> CodaGame rename.
         const std::string& ProjectName() const;
+
+        // C#'s lazily-computed GameDisplayName: ProjectDisplayedTitle unwrapped from NSLOCTEXT/INVTEXT, with
+        // ProjectName as the fallback. Empty when neither is configured (see the LOCTABLE note above).
+        const std::string& GameDisplayName() const;
 
         // Normalises user/soft-object paths onto the mounted layout (Game/Engine roots, virtual paths,
         // the FortniteGame GameFeatures fallback).
@@ -110,6 +133,11 @@ namespace CUE4Parse::FileProvider
         std::shared_ptr<Objects::GameFile> TryGetGameFile(
             const std::string& path, const UE4::VirtualFileSystem::GameFileMap& collection) const;
 
+        // C#'s LoadIniConfigs: parses /Game/Config/DefaultGame.ini and DefaultEngine.ini out of the mounted
+        // files, seeds the internationalization tables and DefaultLightUnit, and returns whether DefaultGame
+        // carries a GeneralProjectSettings section (i.e. whether the AES key that decrypted it works).
+        bool LoadIniConfigs();
+
     private:
         // A loaded package plus the archives it lazily re-reads from (which must outlive it).
         struct LoadedPackage
@@ -119,7 +147,8 @@ namespace CUE4Parse::FileProvider
             std::unique_ptr<UE4::Assets::IPackage> Package;
         };
 
-        mutable std::string _projectName; // lazy, like C#'s field
+        mutable std::string _projectName;     // lazy, like C#'s field
+        mutable std::string _gameDisplayName; // lazy, like C#'s field
         std::map<std::string, LoadedPackage> _loadedPackages; // keyed by GameFile path
     };
 }

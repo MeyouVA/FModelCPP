@@ -19,6 +19,9 @@
 #include "../../UE4/VirtualFileSystem/IAesVfsReader.h"
 #include "../../Utils/StringComparer.h"
 
+namespace CUE4Parse::UE4::IO { class IoGlobalData; }
+namespace CUE4Parse::UE4::IO::Objects { struct FPackageId; class FFilePackageStoreEntry; }
+
 namespace CUE4Parse::FileProvider::Vfs
 {
     using UE4::Objects::Core::Misc::FGuid;
@@ -52,5 +55,17 @@ namespace CUE4Parse::FileProvider::Vfs
 
         virtual IAesVfsReader* TryGetArchive(const std::string& archiveName,
                                              const Utils::StringComparer& comparison = Utils::StringComparer::Ordinal()) = 0;
+
+        // The data read from global.utoc (global name map + script objects). Null until a global container
+        // has been registered; an IoPackage cannot be serialized without it. Non-pure so lighter test
+        // providers need not implement the IO Store members.
+        virtual UE4::IO::IoGlobalData* GlobalData() const { return nullptr; }
+
+        // C#'s TryLoadPackage(FPackageId): the package with that id from Files.ById, or null.
+        virtual UE4::Assets::IPackage* TryLoadPackage(const UE4::IO::Objects::FPackageId& id) { return nullptr; }
+
+        // C#'s TryFindStoreEntry: scans the mounted IO Store containers' headers for `packageId`.
+        virtual const UE4::IO::Objects::FFilePackageStoreEntry* TryFindStoreEntry(
+            const UE4::IO::Objects::FPackageId& packageId) const { return nullptr; }
     };
 }

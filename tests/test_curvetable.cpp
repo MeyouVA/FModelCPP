@@ -220,6 +220,20 @@ static void AppendFloatProperty(std::vector<uint8_t>& buf, int32_t nameIdx, int3
     AppendLE<float>(buf, value);    // value
 }
 
+// Appends the raw FRichCurveKey a cooked asset stores for a StructProperty(RichCurveKey): InterpMode,
+// TangentMode and TangentWeightMode bytes, one padding byte, then Time, Value, ArriveTangent,
+// ArriveTangentWeight, LeaveTangent, LeaveTangentWeight — 28 bytes, matching the struct's C++/C# layout.
+static void AppendRawRichCurveKey(std::vector<uint8_t>& buf, float time, float value)
+{
+    buf.push_back(0); // ERichCurveInterpMode::RCIM_Linear
+    buf.push_back(0); // ERichCurveTangentMode::RCTM_Auto
+    buf.push_back(0); // ERichCurveTangentWeightMode::RCTWM_WeightedNone
+    buf.push_back(0); // padding to the float alignment
+    AppendLE<float>(buf, time);
+    AppendLE<float>(buf, value);
+    for (int i = 0; i < 4; i++) AppendLE<float>(buf, 0.0f); // the four tangent fields
+}
+
 // Shared name pool + indices for all CurveTable exports.
 enum : int32_t {
     C_None = 0, C_Core, C_Class, C_Package, C_CurveTable, C_ScriptEngine, C_MyCurveTable,
@@ -310,14 +324,12 @@ int main()
             AppendFName(keysValue, C_RichCurveKey);       // struct tag data: struct type
             for (int i = 0; i < 16; i++) keysValue.push_back(0); // struct guid
             keysValue.push_back(0);                       // inner tag guid flag
-            // Two element structs (each an FStructFallback: Time + Value FloatProperties + None).
+            // Two element structs. "RichCurveKey" is in FScriptStruct's named-struct table, so the element
+            // payload is the raw 28-byte FRichCurveKey a cooked asset carries (3 mode bytes + 1 pad byte +
+            // 6 floats), not tagged Time/Value properties.
             const float keyData[2][2] = {{0.0f, 10.0f}, {2.0f, 30.0f}};
             for (auto& kd : keyData)
-            {
-                AppendFloatProperty(keysValue, C_Time, C_FloatProperty, kd[0]);
-                AppendFloatProperty(keysValue, C_Value, C_FloatProperty, kd[1]);
-                AppendFName(keysValue, C_None);           // key FStructFallback terminator
-            }
+                AppendRawRichCurveKey(keysValue, kd[0], kd[1]);
             // The Keys tag itself.
             AppendFName(b.ExportData, C_Keys);            // Name
             AppendFName(b.ExportData, C_ArrayProperty);   // Type

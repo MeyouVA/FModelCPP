@@ -107,7 +107,7 @@ namespace CUE4Parse::UE4::IO
                     TocResource.Header->ContainerId.Id, 0,
                     Game() >= Versions::GAME_UE5_0 ? static_cast<uint8_t>(Objects::EIoChunkType5::ContainerHeader)
                                                    : static_cast<uint8_t>(Objects::EIoChunkType::ContainerHeader));
-                Readers::FByteArchive Ar("ContainerHeader", Read(headerChunkId), Versions);
+                Readers::FByteArchive Ar("ContainerHeader", Read(headerChunkId), GetVersions());
                 _containerHeader = std::make_unique<Objects::FIoContainerHeader>(Ar);
             }
             catch (const std::exception&)

@@ -137,3 +137,19 @@ add_test(NAME test_default_file_provider COMMAND test_default_file_provider)
 add_executable(test_io_store test_io_store.cpp)
 target_link_libraries(test_io_store PRIVATE CUE4Parse)
 add_test(NAME test_io_store COMMAND test_io_store)
+
+add_executable(test_zen_package test_zen_package.cpp)
+target_link_libraries(test_zen_package PRIVATE CUE4Parse)
+add_test(NAME test_zen_package COMMAND test_zen_package)
+
+add_executable(test_script_struct test_script_struct.cpp)
+target_link_libraries(test_script_struct PRIVATE CUE4Parse)
+add_test(NAME test_script_struct COMMAND test_script_struct)
+
+add_executable(test_config_ini test_config_ini.cpp)
+target_link_libraries(test_config_ini PRIVATE CUE4Parse)
+add_test(NAME test_config_ini COMMAND test_config_ini)
+
+add_executable(test_version_container test_version_container.cpp)
+target_link_libraries(test_version_container PRIVATE CUE4Parse)
+add_test(NAME test_version_container COMMAND test_version_container)

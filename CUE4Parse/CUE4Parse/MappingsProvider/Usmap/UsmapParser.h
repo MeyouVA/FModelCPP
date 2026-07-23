@@ -10,6 +10,17 @@
 //     bytes in an FByteArchive themselves, as the providers do).
 //   * Decompression goes through this port's Compression::Decompress, so Oodle/Zstd need their decompressor
 //     registered first (Brotli has no built-in decompressor yet and throws UnknownCompressionMethodException).
+//   * ReadName range-checks the name index and reports it, where C# would throw a bare
+//     IndexOutOfRangeException. A usmap whose struct table desyncs is otherwise almost impossible to
+//     diagnose from the exception alone.
+//
+// NOT a difference, but worth recording — usmaps this parser (and the C# it is ported from) cannot read:
+//   * Files carrying the trailing extension sections (the "CEXT" block and its PPTH/EATR/ENVP entries).
+//     Neither version knows they exist; the struct loop stops right where CEXT begins, so they are simply
+//     ignored — harmless on its own.
+//   * Files whose OptionalProperty entries carry no inner property type. Both parsers recurse into one
+//     unconditionally, so the struct table desyncs at the first such property and the parse fails.
+//     Satisfactory's community FactoryGame.usmap is one of these.
 #pragma once
 
 #include <cstdint>

@@ -56,8 +56,8 @@ namespace CUE4Parse::UE4::Objects::Engine::Curves
         {
             if (const auto* sp = dynamic_cast<const StructProperty*>(Properties[i].Tag.get()))
             {
-                if (sp->Value.Struct)
-                    FloatCurves[i] = FRichCurve(*sp->Value.Struct);
+                if (const auto* fallback = sp->Value.AsFallback())
+                    FloatCurves[i] = FRichCurve(*fallback);
             }
         }
     }

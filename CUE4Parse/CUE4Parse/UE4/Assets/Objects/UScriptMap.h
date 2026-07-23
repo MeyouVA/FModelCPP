@@ -5,9 +5,10 @@
 //   * C#'s Dictionary<FPropertyTagType, FPropertyTagType?> becomes an ordered vector of unique_ptr pairs —
 //     FPropertyTagType has no C++ hash/equality, and the reader only needs insertion order. (A null key falls
 //     back to a synthetic StrProperty "UNK_Entry_i", as in C#.)
-//   * The pre-PROPERTY_TAG_SET_MAP_SUPPORT game-specific key/value type inference and the MapStructTypes
-//     table (InnerTypeData/ValueTypeData) are deferred; struct keys/values still read via FStructFallback.
-//     TODO.
+//   * The pre-PROPERTY_TAG_SET_MAP_SUPPORT game-specific key/value type inference is deferred. TODO.
+//   * The Versions.MapStructTypes lookup IS ported, but C# assigns the resolved descriptors back onto the
+//     caller's FPropertyTagData; the port applies them locally instead, since that descriptor is shared
+//     across every read of the property.
 #pragma once
 
 #include <cstdint>

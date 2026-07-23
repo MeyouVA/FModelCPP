@@ -74,7 +74,10 @@ namespace CUE4Parse::MappingsProvider::Usmap
         constexpr int32_t InvalidNameIndex = -1;
         const int32_t idx = ReadNameEntry(Ar);
         if (idx == InvalidNameIndex) return std::nullopt;
-        return nameLut.at(static_cast<size_t>(idx));
+        if (idx < 0 || static_cast<size_t>(idx) >= nameLut.size())
+            throw ParserException("usmap name index " + std::to_string(idx) + " out of range (" +
+                                  std::to_string(nameLut.size()) + " names) at " + std::to_string(Ar.Position));
+        return nameLut[static_cast<size_t>(idx)];
     }
 
     std::shared_ptr<PropertyType> ParsePropertyType(FUsmapReader& Ar, const std::vector<std::string>& nameLut)
@@ -185,7 +188,12 @@ namespace CUE4Parse::MappingsProvider::Usmap
         const bool bHasVersioning = Ar.Version >= EUsmapVersion::PackageVersioning && Ar.ReadBoolean();
         if (bHasVersioning)
         {
-            PackageVersion = FPackageFileVersion(Ar.Read<int32_t>(), Ar.Read<int32_t>());
+            // Sequenced through locals: C# reads the UE4 version then the UE5 one, and C++ leaves
+            // argument evaluation order unspecified (MSVC evaluates right-to-left, so the inline form
+            // silently swapped them).
+            const auto ue4Version = Ar.Read<int32_t>();
+            const auto ue5Version = Ar.Read<int32_t>();
+            PackageVersion = FPackageFileVersion(ue4Version, ue5Version);
             CustomVersions = FCustomVersionContainer(Ar, ECustomVersionSerializationFormat::Latest);
             NetCL = Ar.Read<uint32_t>();
         }

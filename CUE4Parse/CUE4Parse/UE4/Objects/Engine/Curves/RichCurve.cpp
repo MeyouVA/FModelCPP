@@ -78,9 +78,15 @@ namespace CUE4Parse::UE4::Objects::Engine::Curves
                 for (const auto& elem : ap->Value.Properties)
                 {
                     const auto* sp = dynamic_cast<const StructProperty*>(elem.get());
-                    if (sp == nullptr || sp->Value.Struct == nullptr)
+                    if (sp == nullptr)
                         continue;
-                    Keys.push_back(ReadKey(*sp->Value.Struct));
+                    // "RichCurveKey" is in the named-struct table, so a real asset yields the struct
+                    // directly (C#'s data.GetOrDefault<FRichCurveKey[]>). Data that was written as tagged
+                    // properties still resolves through the fallback bag.
+                    if (const auto* key = sp->Value.Get<FRichCurveKey>())
+                        Keys.push_back(*key);
+                    else if (const auto* fallback = sp->Value.AsFallback())
+                        Keys.push_back(ReadKey(*fallback));
                 }
             }
             break;

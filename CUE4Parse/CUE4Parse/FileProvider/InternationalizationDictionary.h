@@ -11,6 +11,9 @@
 
 #include <map>
 #include <string>
+#include <vector>
+
+#include "../UE4Config/Parsing/ConfigIni.h"
 
 namespace CUE4Parse::FileProvider
 {
@@ -60,7 +63,19 @@ namespace CUE4Parse::FileProvider
 
         void Clear() { _collection.clear(); }
 
+        // C#'s InitFromIni: the culture tables an ini declares. Reads CulturesToStage from
+        // /Script/UnrealEd.ProjectPackagingSettings plus CultureMappings and LocalizationPaths from
+        // [Internationalization]; only `Add` (+Key=) instructions count, as in C#.
+        void InitFromIni(const UE4Config::Parsing::ConfigIni& ini);
+
+        const std::vector<std::string>& AvailableCultures() const { return _availableCultures; }
+        const std::map<std::string, std::string>& CultureMappings() const { return _cultureMappings; }
+        const std::vector<std::string>& LocalizationPaths() const { return _localizationPaths; }
+
     private:
         std::map<std::string, std::map<std::string, std::string>> _collection;
+        std::vector<std::string> _availableCultures;
+        std::map<std::string, std::string> _cultureMappings;
+        std::vector<std::string> _localizationPaths;
     };
 }

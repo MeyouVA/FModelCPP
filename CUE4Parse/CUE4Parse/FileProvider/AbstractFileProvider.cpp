@@ -1,10 +1,17 @@
 #include "AbstractFileProvider.h"
 
+#include <regex>
 #include <stdexcept>
 
 #include "Objects/OsGameFile.h"
+#include "../UE4/VirtualFileSystem/IAesVfsReader.h"
+#include "../UE4/VirtualFileSystem/VfsEntry.h"
+#include "Vfs/IVfsFileProvider.h"
+#include "../UE4/Assets/IoPackage.h"
 #include "../UE4/Assets/Package.h"
 #include "../UE4/Exceptions/ParserException.h"
+#include "../UE4/IO/IoStoreReader.h"
+#include "../UE4/IO/Objects/FIoStoreEntry.h"
 #include "../UE4/Pak/Objects/FPakEntry.h"
 #include "../UE4/Readers/FArchive.h"
 #include "../Utils/StringUtils.h"
@@ -14,9 +21,23 @@ namespace CUE4Parse::FileProvider
     using Objects::GameFile;
     using UE4::Assets::IPackage;
     using UE4::Assets::Package;
+    using UE4Config::Parsing::InstructionToken;
 
     namespace
     {
+        // C#'s `new StreamReader(ar)` over an ini game file. Only UTF-8 (with or without a BOM) is decoded;
+        // C#'s StreamReader would also detect a UTF-16 BOM, which no shipped ini has used so far. TODO.
+        std::optional<std::string> ReadIniText(GameFile& file)
+        {
+            const auto bytes = file.SafeRead();
+            if (!bytes.has_value()) return std::nullopt;
+
+            const auto& data = *bytes;
+            size_t start = 0;
+            if (data.size() >= 3 && data[0] == 0xEF && data[1] == 0xBB && data[2] == 0xBF) start = 3;
+            return std::string(reinterpret_cast<const char*>(data.data()) + start, data.size() - start);
+        }
+
         bool EndsWithIgnoreCase(const std::string& s, const std::string& suffix)
         {
             if (s.size() < suffix.size()) return false;
@@ -163,6 +184,115 @@ namespace CUE4Parse::FileProvider
         return file != nullptr ? file->SafeCreateReader() : nullptr;
     }
 
+    const std::string& AbstractFileProvider::GameDisplayName() const
+    {
+        if (_gameDisplayName.empty())
+        {
+            std::vector<const InstructionToken*> instructions;
+            DefaultGame.FindPropertyInstructions("/Script/EngineSettings.GeneralProjectSettings",
+                                                 "ProjectDisplayedTitle", instructions);
+            if (!instructions.empty())
+            {
+                // C#'s regex, with [\s\S] standing in for RegexOptions.Singleline's `.` and numbered groups
+                // for its named 'target' captures (std::regex has no named groups).
+                static const std::regex projectPattern(
+                    R"rx(^(?:NSLOCTEXT\("[\s\S]*", "[\s\S]*", "([\s\S]*)"\)|INVTEXT\("([\s\S]*)"\)|([\s\S]*))$)rx");
+                std::smatch match;
+                const std::string& raw = instructions[0]->Value;
+                if (std::regex_match(raw, match, projectPattern))
+                {
+                    std::string target;
+                    for (size_t group = 1; group < match.size(); ++group)
+                    {
+                        if (match[group].matched) { target = match[group].str(); break; }
+                    }
+
+                    if (target.rfind("LOCTABLE(\"/Game/", 0) == 0)
+                    {
+                        // C# loads the UStringTable the title indirects through; object loading of string
+                        // tables is not wired here yet, so the display name simply stays empty. TODO.
+                    }
+                    else if (target.find_first_not_of(" \t\r\n") != std::string::npos && target != "{GameName}")
+                    {
+                        _gameDisplayName = target;
+                    }
+                    else
+                    {
+                        instructions.clear();
+                        DefaultGame.FindPropertyInstructions("/Script/EngineSettings.GeneralProjectSettings",
+                                                             "ProjectName", instructions);
+                        if (!instructions.empty()) _gameDisplayName = instructions[0]->Value;
+                    }
+                }
+            }
+            else
+            {
+                DefaultGame.FindPropertyInstructions("/Script/EngineSettings.GeneralProjectSettings",
+                                                     "ProjectName", instructions);
+                if (!instructions.empty()) _gameDisplayName = instructions[0]->Value;
+            }
+        }
+
+        if (Versions.Game() == UE4::Versions::GAME_Back4Blood)
+            _gameDisplayName = "Back 4 Blood"; // They left it as LDTEXT("TEXT_UI_GameTitle")
+
+        return _gameDisplayName;
+    }
+
+    bool AbstractFileProvider::LoadIniConfigs()
+    {
+        if (const auto defaultGame = TryGetGameFile("/Game/Config/DefaultGame.ini"))
+        {
+            if (const auto* vfsEntry = dynamic_cast<const UE4::VirtualFileSystem::VfsEntry*>(defaultGame.get()))
+            {
+                if (const auto* aesReader = dynamic_cast<const UE4::VirtualFileSystem::IAesVfsReader*>(vfsEntry->Vfs))
+                    DefaultGame.EncryptionKeyGuid = aesReader->EncryptionKeyGuid();
+            }
+            if (const auto text = ReadIniText(*defaultGame))
+                DefaultGame.Read(*text); // Read() clears the sections first, as C# does explicitly
+
+            Internationalization.InitFromIni(DefaultGame);
+        }
+
+        if (const auto defaultEngine = TryGetGameFile("/Game/Config/DefaultEngine.ini"))
+        {
+            if (const auto* vfsEntry = dynamic_cast<const UE4::VirtualFileSystem::VfsEntry*>(defaultEngine.get()))
+            {
+                if (const auto* aesReader = dynamic_cast<const UE4::VirtualFileSystem::IAesVfsReader*>(vfsEntry->Vfs))
+                    DefaultEngine.EncryptionKeyGuid = aesReader->EncryptionKeyGuid();
+            }
+            if (const auto text = ReadIniText(*defaultEngine))
+                DefaultEngine.Read(*text);
+
+            // C# also mirrors the a.StripAdditiveRefPose / r.*.KeepMobileMinLODSettingOnDesktop console
+            // variables into Versions[<name>]; VersionContainer has no Options table here (see its header).
+
+            for (const auto& section : DefaultEngine.Sections)
+            {
+                if (section->Name != "/Script/Engine.RendererSettings") continue;
+
+                for (const auto& token : section->Tokens)
+                {
+                    const auto* instruction = dynamic_cast<const InstructionToken*>(token.get());
+                    if (instruction == nullptr || instruction->Key != "r.DefaultFeature.LightUnits") continue;
+                    try
+                    {
+                        size_t consumed = 0;
+                        const int unit = std::stoi(instruction->Value, &consumed);
+                        if (consumed > 0) DefaultLightUnit = static_cast<UE4::Objects::Engine::ELightUnits>(unit);
+                    }
+                    catch (const std::exception&)
+                    {
+                        // C#'s int.TryParse: a non-numeric value just leaves DefaultLightUnit alone.
+                    }
+                    break; // C#'s FirstOrDefault
+                }
+            }
+        }
+
+        return DefaultGame.FindSection("/Script/EngineSettings.GeneralProjectSettings") != nullptr;
+    }
+
     IPackage& AbstractFileProvider::LoadPackage(GameFile& file)
     {
         if (!file.IsUePackage()) throw std::invalid_argument("cannot load non-UE package");
@@ -177,18 +307,31 @@ namespace CUE4Parse::FileProvider
         Files.FindPayloads(file, uexp, ubulks, uptnls);
         // The ubulk/uptnl lazy readers are dropped with the bulk-data layer (see GameFile.h). TODO.
 
-        if (dynamic_cast<UE4::Pak::Objects::FPakEntry*>(&file) == nullptr &&
+        auto* ioStoreEntry = dynamic_cast<UE4::IO::Objects::FIoStoreEntry*>(&file);
+        auto* vfsFileProvider = dynamic_cast<Vfs::IVfsFileProvider*>(this);
+
+        if (ioStoreEntry == nullptr &&
+            dynamic_cast<UE4::Pak::Objects::FPakEntry*>(&file) == nullptr &&
             dynamic_cast<Objects::OsGameFile*>(&file) == nullptr)
         {
-            // C#'s FIoStoreEntry branch builds an IoPackage; that (Zen) asset layer is not ported yet.
             throw UE4::Exceptions::ParserException(
-                "loading \"" + file.Path() + "\" as a package requires the unported IoPackage layer");
+                "cannot load \"" + file.Path() + "\": unsupported game-file type");
         }
 
         LoadedPackage loaded;
         loaded.UassetAr = file.CreateReader();
-        if (uexp != nullptr) loaded.UexpAr = uexp->CreateReader();
-        loaded.Package = std::make_unique<Package>(*loaded.UassetAr, loaded.UexpAr.get(), this);
+        if (ioStoreEntry != nullptr && vfsFileProvider != nullptr)
+        {
+            // C#: new IoPackage(uasset, ioStoreEntry.IoStoreReader.ContainerHeader, lazyUbulk, lazyUptnl, vfsFileProvider)
+            loaded.Package = std::make_unique<UE4::Assets::IoPackage>(
+                *loaded.UassetAr, ioStoreEntry->GetIoStoreReader().ContainerHeader(),
+                nullptr, nullptr, vfsFileProvider);
+        }
+        else
+        {
+            if (uexp != nullptr) loaded.UexpAr = uexp->CreateReader();
+            loaded.Package = std::make_unique<Package>(*loaded.UassetAr, loaded.UexpAr.get(), this);
+        }
 
         auto [it, inserted] = _loadedPackages.emplace(file.Path(), std::move(loaded));
         return *it->second.Package;
