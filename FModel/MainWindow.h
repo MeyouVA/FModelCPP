@@ -19,6 +19,7 @@ class QTreeWidget;
 class QLabel;
 
 namespace FModel::Framework { class FStatus; }
+namespace FModel::ViewModels { class ApplicationViewModel; }
 
 namespace FModel
 {
@@ -60,7 +61,11 @@ namespace FModel
         QTabWidget* _tabControlName = nullptr;      // TabControlName (editor/viewer tabs)
         QTextEdit* _logRtbName = nullptr;           // LogRtbName
 
-        Framework::FStatus* _status = nullptr;      // Status (drives the status bar)
+        // The WPF window's DataContext. Owned by the window; the shell reads Status/Categories off it and
+        // routes the two guarded view-state properties through it.
+        ViewModels::ApplicationViewModel* _applicationView = nullptr;
+
+        Framework::FStatus* _status = nullptr;      // Status (= _applicationView->status(), not owned)
         QLabel* _statusLabel = nullptr;             // bound to Status.Label
         QLabel* _lastRefreshLabel = nullptr;        // "Last Refresh: ..."
     };

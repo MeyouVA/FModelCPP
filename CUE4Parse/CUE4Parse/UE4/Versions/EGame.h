@@ -266,4 +266,10 @@ namespace CUE4Parse::UE4::Versions
 
     // GameUtils.GetVersion(EGame) — maps an EGame to its FPackageFileVersion.
     FPackageFileVersion GetVersion(EGame game);
+
+    // C#'s EGame.ToString() — the member name, e.g. "GAME_UE5_3". Used by the app layer for the window title
+    // and the game-version picker. Three members are pure aliases (GAME_UE4_LATEST, GAME_UE5_LATEST,
+    // GAME_UE6_LATEST); like .NET, they report the name of the member declared first at that value.
+    // Returns nullptr for a value that is not a declared member (C# would render the number instead).
+    const char* EGameName(EGame game);
 }

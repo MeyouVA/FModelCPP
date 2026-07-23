@@ -66,6 +66,7 @@ namespace CUE4Parse::UE4::Assets
         {
             return (static_cast<uint32_t>(Summary.PackageFlags) & static_cast<uint32_t>(flags)) != 0;
         }
+        const FPackageFileSummary* GetSummary() const override { return &Summary; }
         ResolvedObject* ResolvePackageIndex(const FPackageIndex* index) override;
         Exports::UObject* GetExportObject(int index) override;
         CUE4Parse::FileProvider::IFileProvider* GetProvider() const override { return _provider; }

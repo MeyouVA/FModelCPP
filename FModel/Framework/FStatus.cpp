@@ -3,7 +3,7 @@
 
 namespace FModel::Framework
 {
-    FStatus::FStatus()
+    FStatus::FStatus(QObject* parent) : ViewModel(parent)
     {
         setStatus(EStatusKind::Loading);
     }

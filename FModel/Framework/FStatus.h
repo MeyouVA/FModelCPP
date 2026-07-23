@@ -18,7 +18,8 @@ namespace FModel::Framework
         Q_OBJECT
 
     public:
-        FStatus();
+        // C#'s ctor takes no arguments; the optional parent is the Qt ownership hook ApplicationViewModel uses.
+        explicit FStatus(QObject* parent = nullptr);
 
         bool isReady() const { return _isReady; }
         EStatusKind kind() const { return _kind; }

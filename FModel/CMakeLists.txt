@@ -35,6 +35,20 @@ set(FMODEL_SETTINGS_SOURCES
     Settings/UserSettings.cpp
 )
 
+# The root view-model and what it pulls in. Shared by the app and by test_application_viewmodel; it needs the
+# settings tree too, so this list is always used alongside FMODEL_SETTINGS_SOURCES.
+set(FMODEL_VIEWMODEL_SOURCES
+    Constants.h
+    Constants.cpp
+    Extensions/AssetCategoryExtensions.h
+    Framework/FStatus.h
+    Framework/FStatus.cpp
+    ViewModels/LoadingModesViewModel.h
+    ViewModels/LoadingModesViewModel.cpp
+    ViewModels/ApplicationViewModel.h
+    ViewModels/ApplicationViewModel.cpp
+)
+
 add_executable(FModel
     main.cpp
     MainWindow.h
@@ -44,8 +58,7 @@ add_executable(FModel
     # Framework — the MVVM base layer (ported from FModel/Framework).
     Framework/Command.h
     Framework/ViewModelCommand.h
-    Framework/FStatus.h
-    Framework/FStatus.cpp
+    ${FMODEL_VIEWMODEL_SOURCES}
     ${FMODEL_SETTINGS_SOURCES}
     resources.qrc
 )
@@ -102,4 +115,20 @@ if(WIN32 AND WINDEPLOYQT_EXECUTABLE)
     add_custom_command(TARGET test_settings POST_BUILD
         COMMAND "${WINDEPLOYQT_EXECUTABLE}" --no-translations --no-compiler-runtime "$<TARGET_FILE:test_settings>"
         COMMENT "Deploying Qt runtime for test_settings")
+endif()
+
+# Behavioural tests for the root view-model layer: the guarded view-state properties, the category helpers,
+# the loading-mode list and the constants/EGameName the window title is built from.
+add_executable(test_application_viewmodel
+    tests/test_application_viewmodel.cpp
+    ${FMODEL_VIEWMODEL_SOURCES}
+    ${FMODEL_SETTINGS_SOURCES}
+)
+target_include_directories(test_application_viewmodel PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(test_application_viewmodel PRIVATE Qt6::Widgets Qt6::Test CUE4Parse CUE4Parse-Conversion)
+add_test(NAME test_application_viewmodel COMMAND test_application_viewmodel)
+if(WIN32 AND WINDEPLOYQT_EXECUTABLE)
+    add_custom_command(TARGET test_application_viewmodel POST_BUILD
+        COMMAND "${WINDEPLOYQT_EXECUTABLE}" --no-translations --no-compiler-runtime "$<TARGET_FILE:test_application_viewmodel>"
+        COMMENT "Deploying Qt runtime for test_application_viewmodel")
 endif()

@@ -153,3 +153,15 @@ add_test(NAME test_config_ini COMMAND test_config_ini)
 add_executable(test_version_container test_version_container.cpp)
 target_link_libraries(test_version_container PRIVATE CUE4Parse)
 add_test(NAME test_version_container COMMAND test_version_container)
+
+add_executable(test_custom_versions test_custom_versions.cpp)
+target_link_libraries(test_custom_versions PRIVATE CUE4Parse)
+add_test(NAME test_custom_versions COMMAND test_custom_versions)
+
+add_executable(test_wwise_fmod_enums test_wwise_fmod_enums.cpp)
+target_link_libraries(test_wwise_fmod_enums PRIVATE CUE4Parse)
+add_test(NAME test_wwise_fmod_enums COMMAND test_wwise_fmod_enums)
+
+add_executable(test_bulk_enums test_bulk_enums.cpp)
+target_link_libraries(test_bulk_enums PRIVATE CUE4Parse)
+add_test(NAME test_bulk_enums COMMAND test_bulk_enums)

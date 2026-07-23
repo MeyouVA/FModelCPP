@@ -14,7 +14,7 @@
 #include "../Objects/UObject/EPackageFlags.h"
 
 namespace CUE4Parse::MappingsProvider { class TypeMappings; }
-namespace CUE4Parse::UE4::Objects::UObject { class FPackageIndex; }
+namespace CUE4Parse::UE4::Objects::UObject { class FPackageIndex; class FPackageFileSummary; }
 namespace CUE4Parse::UE4::Assets::Exports { class UObject; }
 namespace CUE4Parse::FileProvider { class IFileProvider; }
 
@@ -35,6 +35,10 @@ namespace CUE4Parse::UE4::Assets
 
         // Mirrors C# Summary.PackageFlags.HasFlag(flags).
         virtual bool HasFlags(CUE4Parse::UE4::Objects::UObject::EPackageFlags flags) const = 0;
+
+        // C#'s IPackage.Summary. Returned by pointer rather than reference so implementations that carry no
+        // summary can say so; VersionUtils::CustomVer reads bUnversioned + CustomVersionContainer through it.
+        virtual const CUE4Parse::UE4::Objects::UObject::FPackageFileSummary* GetSummary() const { return nullptr; }
 
         // Resolves an import/export index to a ResolvedObject (its name/outer/class chain). Returns null for
         // a null index or an out-of-range one.

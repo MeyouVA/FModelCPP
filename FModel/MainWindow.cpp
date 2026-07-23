@@ -3,6 +3,8 @@
 
 #include "Enums.h"
 #include "Framework/FStatus.h"
+#include "Settings/UserSettings.h"
+#include "ViewModels/ApplicationViewModel.h"
 
 #include <QAction>
 #include <QCheckBox>
@@ -68,7 +70,15 @@ namespace FModel
 
     MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
     {
-        setWindowTitle(QStringLiteral("FModel"));
+        // WPF sets Title="{Binding InitialWindowTitle}" and appends TitleExtra; the shell does the same,
+        // except that the extra part is only meaningful once a game directory is configured.
+        // WPF appends TitleExtra unconditionally because a game directory is always configured by then; here
+        // it is only appended once one is, so an unconfigured shell does not show an empty "()".
+        _applicationView = new ViewModels::ApplicationViewModel(this);
+        QString title = _applicationView->initialWindowTitle();
+        if (Settings::UserSettings::Default()->currentDir() != nullptr)
+            title += QStringLiteral(" ") + _applicationView->titleExtra();
+        setWindowTitle(title);
         setWindowIcon(QIcon(QStringLiteral(":/Resources/FModel.ico")));
         resize(1280, 800);
 
@@ -138,17 +148,30 @@ namespace FModel
         cornerRow->addWidget(new QLabel(QStringLiteral("Preview New Explorer System")));
         _featurePreviewToggle = new QCheckBox;
         _featurePreviewToggle->setObjectName(QStringLiteral("FeaturePreviewNewAssetExplorer"));
-        _featurePreviewToggle->setChecked(true); // FModel screenshot has this on
         cornerRow->addWidget(_featurePreviewToggle);
         bar->setCornerWidget(corner, Qt::TopRightCorner);
 
-        // Stand-in behaviour: flip the right-hand stack between the asset explorer and the editor tabs. In the real
-        // app this is driven by ApplicationViewModel.IsAssetsExplorerVisible, not this flag.
+        // The toggle now routes through ApplicationViewModel.IsAssetsExplorerVisible, which refuses to turn on
+        // while the FeaturePreviewNewAssetExplorer setting is off — so the checkbox has to follow the
+        // view-model rather than the click, and the stack follows the view-model too.
         connect(_featurePreviewToggle, &QCheckBox::toggled, this, [this](bool on) {
-            if (_mainStack) _mainStack->setCurrentIndex(on ? 1 : 0);
-            log(on ? QStringLiteral("Switched to editor tabs view.")
-                   : QStringLiteral("Switched to asset explorer view."));
+            _applicationView->setIsAssetsExplorerVisible(on);
+            const bool visible = _applicationView->isAssetsExplorerVisible();
+            if (visible != on)
+            {
+                QSignalBlocker blocker(_featurePreviewToggle);
+                _featurePreviewToggle->setChecked(visible);
+                log(QStringLiteral("The new asset explorer is disabled in the settings."));
+                return;
+            }
+            if (_mainStack) _mainStack->setCurrentIndex(visible ? 0 : 1);
+            log(visible ? QStringLiteral("Switched to asset explorer view.")
+                        : QStringLiteral("Switched to editor tabs view."));
         });
+        {
+            QSignalBlocker blocker(_featurePreviewToggle);
+            _featurePreviewToggle->setChecked(_applicationView->isAssetsExplorerVisible());
+        }
     }
 
     QWidget* MainWindow::buildLeftTabControl()
@@ -157,7 +180,10 @@ namespace FModel
         _leftTabControl->setObjectName(QStringLiteral("LeftTabControl"));
         _leftTabControl->setMinimumWidth(400);
         connect(_leftTabControl, &QTabWidget::currentChanged, this,
-                [this](int) { /* WPF OnTabItemChange: focus the tab's primary control (no-op for the shell). */ });
+                [this](int index) {
+                    // WPF OnTabItemChange also focuses the tab's primary control (no-op for the shell).
+                    _applicationView->setSelectedLeftTabIndex(index);
+                });
 
         // --- Tab 0: Archives ---
         {
@@ -270,6 +296,10 @@ namespace FModel
             _categoriesSelector = new QComboBox;
             _categoriesSelector->setObjectName(QStringLiteral("CategoriesSelector"));
             _categoriesSelector->setMinimumWidth(150);
+            // WPF: ItemsSource="{Binding Categories}", rendered through the enum's ToString().
+            for (const EAssetCategory category : _applicationView->categories())
+                _categoriesSelector->addItem(assetCategoryName(category),
+                                             static_cast<uint>(static_cast<uint32_t>(category)));
             topRow->addWidget(_assetsExplorerSearch, 1);
             topRow->addWidget(_categoriesSelector, 0);
             v->addLayout(topRow);
@@ -368,10 +398,9 @@ namespace FModel
     {
         auto* bar = statusBar();
 
-        // The status bar is driven by an FStatus view-model (as in WPF, where the bar binds to Status.Label).
-        // FStatus starts in Loading; the shell has nothing to load yet, so we mark it Ready.
-        _status = new Framework::FStatus();
-        _status->setParent(this); // ownership; FStatus keeps C#'s parameterless ctor
+        // The status bar is driven by the ApplicationViewModel's FStatus (as in WPF, where the bar binds to
+        // Status.Label). The view-model constructor already leaves it Ready.
+        _status = _applicationView->status();
         _statusLabel = new QLabel(_status->label());
         _statusLabel->setObjectName(QStringLiteral("StatusLabel"));
         bar->addWidget(_statusLabel);
@@ -386,8 +415,6 @@ namespace FModel
 
         _lastRefreshLabel = new QLabel(QStringLiteral("Last Refresh: never"));
         bar->addPermanentWidget(_lastRefreshLabel);
-
-        _status->setStatus(EStatusKind::Ready);
     }
 
     QAction* MainWindow::makeCommandAction(const QString& text, const QString& parameter, const QString& shortcut)

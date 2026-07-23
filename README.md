@@ -43,10 +43,36 @@ Qt6 is found; the CUE4Parse library and tests build fine without it.
   base is `FStatus` (`FModel/Framework/FStatus.{h,cpp}`, ported from `Framework/FStatus.cs`) — it tracks an
   `EStatusKind` + label and derives `IsReady`, and it is wired into `MainWindow`'s status bar (the label binds
   to `Status.Label` through the `propertyChanged` signal, matching the WPF binding). `EStatusKind` and the
-  other plain enums live in `FModel/Enums.h` (ported from `Enums.cs`; only the `AssetCategory` enum is still
-  deferred, since it depends on `AssetCategoryExtensions.CategoryBase`). Behaviour is covered by
-  `FModel/tests/test_framework.cpp` (QtTest, registered with ctest).
-- **Settings** (`FModel/Settings/`): the whole persisted settings tree — `UserSettings` (the root, ~70 stored
+  other plain enums live in `FModel/Enums.h` (ported from `Enums.cs`, now including `EAssetCategory`).
+  Behaviour is covered by `FModel/tests/test_framework.cpp` (QtTest, registered with ctest).
+- **ViewModels** (`FModel/ViewModels/`): `ApplicationViewModel` — the root view-model the window binds to —
+  plus `LoadingModesViewModel`, and the `Constants` / `AssetCategoryExtensions` pieces they are built from.
+  `MainWindow` now owns the view-model and reads its `FStatus`, its `Categories` (which fill the categories
+  combo), and routes the "Preview New Explorer System" toggle and the left tab strip through it. Notes:
+  - **The two guarded properties are where a port can silently diverge.** `IsAssetsExplorerVisible` refuses to
+    turn *on* while `UserSettings.FeaturePreviewNewAssetExplorer` is off (turning off is never gated), and
+    `SelectedLeftTabIndex` **ignores** anything outside `[0, 2]` rather than clamping. A clamping port would
+    look identical in the UI and differ on every rejected assignment, so both are covered by tests.
+  - **Deferred, each blocked on its own port:** `CUE4ParseViewModel` (1590 C# lines) and with it the
+    VFS-registered/mounted/unmounted handlers and `UpdateProvider`; `CustomDirectories`, `SettingsView`,
+    `AesManager`, `AudioPlayer`; the three commands; `AvoidEmptyGameDirectory`/`AddGameDirectory`/`Restart`
+    (they drive the `DirectorySelector` window and a process restart); and the static `Init*` DLL helpers.
+    `gameDisplayName()` therefore returns `"Unknown"`, which is also C#''s null branch.
+  - **The constructor deliberately does not exit.** C#''s hard-exits the process when no game directory is
+    chosen; with the directory selector unported there is nothing to ask, and an unconfigured app must still
+    be constructible for the shell and the tests. `titleExtra()` consequently tolerates a null `CurrentDir`,
+    and `MainWindow` only appends it to the title once a directory is configured.
+  - **`EAssetCategory` packs a base category in its high 16 bits.** `AssetCategoryExtensions` is the only
+    place that layout is decoded. C# writes the enum in terms of `AssetCategoryExtensions.CategoryBase` and
+    the extensions in terms of the enum; C++ headers cannot have that cycle, so `Enums.h` spells the base
+    literally and `AssetCategoryExtensions.h` `static_assert`s the two agree.
+  - **`Constants`**: the compile-time values carry over verbatim; the four build-identity ones come from
+    `QCoreApplication::applicationFilePath()` plus optional `FMODEL_APP_VERSION`/`FMODEL_APP_COMMIT_ID`
+    definitions, and report `"unknown"` rather than inventing a commit id when nothing is injected.
+  - **`EGameName`** was added to CUE4Parse (`UE4/Versions/EGame.{h,cpp}`) for the window title: C#''s
+    `EGame.ToString()`, generated from the 234 members'' declaration order with the three pure aliases
+    collapsed to the first-declared name, as .NET does.
+  Covered by `FModel/tests/test_application_viewmodel.cpp`.- **Settings** (`FModel/Settings/`): the whole persisted settings tree — `UserSettings` (the root, ~70 stored
   properties), `DirectorySettings` (per game directory), `EndpointSettings`, `VersioningSettings` and
   `CustomDirectory`, plus the DTOs they embed (`AesResponse`, `AuthResponse`, `DetectedGame`). Covered by
   `FModel/tests/test_settings.cpp`. Notes on this layer:
@@ -105,7 +131,14 @@ foundation** everything else builds on:
 | Object version enums | `UE4/Versions/ObjectVersion.cs` | `UE4/Versions/ObjectVersion.h` |
 | Package file version | `UE4/Versions/ObjectVersion.cs` | `UE4/Versions/FPackageFileVersion.h` |
 | Version container | `UE4/Versions/VersionContainer.cs` | `UE4/Versions/VersionContainer.{h,cpp}` |
+| Custom-version lookup | `UE4/Versions/VersionUtils.cs` | `UE4/Versions/VersionUtils.{h,cpp}` |
+| Custom version families (40) | `UE4/Versions/F*{Object,Custom}Version.cs` | `UE4/Versions/F*{Object,Custom}Version.h` |
+| Asset registry version | `UE4/Versions/FAssetRegistryVersion.cs` | `UE4/Versions/FAssetRegistryVersion.h` |
 | Texture platform | `UE4/Assets/.../ETexturePlatform.cs` | `UE4/Assets/Exports/Texture/ETexturePlatform.h` |
+| Wwise enums (36) | `UE4/Wwise/Enums/*.cs` | `UE4/Wwise/Enums/*.h` |
+| Wwise flag enums (15) | `UE4/Wwise/Enums/Flags/*.cs` | `UE4/Wwise/Enums/Flags/*.h` |
+| FMod enums (16) | `UE4/FMod/Enums/*.cs` | `UE4/FMod/Enums/*.h` |
+| Remaining enum-only files (46) | across the tree (`Kismet`, `RigVM`, `RHI`, `i18N`, `Texture`, `Material`, `Animation`, `WorldPartition`, `VirtualFileCache`, …) | same relative paths, `.h` |
 | Parser exceptions | `UE4/Exceptions/ParserException.cs` | `UE4/Exceptions/ParserException.{h,cpp}` |
 | FName (full) | `UE4/Objects/UObject/FName.cs` | `UE4/Objects/UObject/FName.h` |
 | Base archive | `UE4/Readers/FArchive.cs` | `UE4/Readers/FArchive.{h,cpp}` |
@@ -339,6 +372,63 @@ These are noted inline in the headers where they occur:
   `Dictionary` rather than defaulting to false; `MapStructTypes` values are a pair of strings, with `""`
   standing in for C#'s null (only `IsNullOrEmpty` is ever tested); the override tables are plain maps, since
   C# only iterates them; and `ICloneable.Clone()` is dropped in favour of the implicit copy constructor.
+- **The whole custom-version family is ported — 40 headers plus the lookup they sit on.** `VersionUtils`'
+  `CustomVer(Ar, guid)` answers in C#'s precedence order: the provider's override table (`Versions.CustomVersions`,
+  the `AppSettings.json` `"Versioning"` block) first, then the owning package's summary when it is versioned,
+  and otherwise `-1` meaning "guess from the game". Each `FXxxObjectVersion` / `FXxxCustomVersion` then keeps
+  its own `enum Type`, its `GUID` and a `Get(FArchive&)` that either returns the resolved version or walks the
+  per-game ladder. Deliberate differences: C#'s `static class` becomes a namespace (so `FXxx::Type::Member`
+  and `FXxx::Member` both resolve, the enum staying unscoped as in C#), and the extension method
+  `Ar.CustomVer(key)` becomes the free function `CustomVer(Ar, key)`. Two files keep their C# oddities rather
+  than being normalised: `FExternalPhysicsCustomObjectVersion` lives in `UE4/Versions/` but declares itself in
+  `CUE4Parse::UE4::Objects::UObject`, exactly as the C# does; and `FAssetRegistryVersion` is not a member of
+  the family at all — a standalone `FAssetRegistryVersionType` enum plus a `TrySerializeVersion` that reads a
+  leading GUID off the archive and only trusts the following version int when it matches. That enum is scoped
+  (`enum class : int32_t`) to keep ~25 member names out of the namespace; every C# call site already spells it
+  qualified. `IPackage` grew a `GetSummary()` accessor so `CustomVer` can reach `bUnversioned` and the
+  package's own custom-version table.
+- **Every enum-only file in the tree is ported — 113 headers across two bulk passes.** The first pass took
+  the three enum directories whole (`UE4/Wwise/Enums` 36, `UE4/Wwise/Enums/Flags` 15, `UE4/FMod/Enums` 16);
+  the second swept up the 46 remaining C# files anywhere in the tree that declare only enums (`Kismet`,
+  `RigVM`, `RHI`, `i18N`, `Texture`, `Material`, `Animation`, `WorldPartition`, `VirtualFileCache`, …).
+  Both were generated by a shape-asserting script that refuses anything it does not fully recognise rather
+  than guessing; the refusals are what found the outliers below. Conventions and deliberate differences:
+  - C# enums are strongly typed, so these are `enum class` with the C# underlying type preserved exactly —
+    these values are read straight off the wire and a widened type would consume the wrong number of bytes.
+  - A `[Flags]` enum gets the bitwise operators C# grants for free (`| & ~ |= &=`) plus a `HasFlag` free
+    function, matching the existing `EUnluacFlags` precedent. `operator~` truncates back to the underlying
+    type, so `~` on a byte-backed enum stays inside the byte instead of promoting to `int`.
+  - `[Description("…")]` is **runtime data, not decoration** — `FModel/Creator/Utils.cs` calls
+    `GetDescription()` and uses the result as an internationalisation lookup key — so it is carried over as a
+    generated `Description(E)`, joining the existing per-enum overload set (`ELanguage`, `EMaterialFormat`,
+    `ENaniteMeshFormat`), and returning `nullptr` for a member that has none (C#'s extension falls back to the
+    member name, which callers must now do themselves). `ETexturePlatform` gained the overload it was missing.
+  - `NameOf(E)` (C#'s `ToString()`) is generated **only** where an extension method actually observes the
+    member name, which is `EAKBKHircType`, `EAKBKHircType_v125`, `EAkActionType` and
+    `EEventActionType_v72_to_v150`. Elsewhere it would be dead code. Enums whose C# carries
+    `[JsonConverter(typeof(StringEnumConverter))]` are commented to that effect so the requirement is not lost
+    when the JSON writer lands.
+  - The three C# `…Extensions` classes are hand-written, since they are logic rather than data:
+    `EAKBKHircType`'s `MapToCurrent`/`ToVersionString`, `EAkActionType`'s `ToVersionString`, and
+    `EBankSourceFlags`' `MapToCurrent`. These exist because the version pairs are *not* a straight cast of one
+    another — v125 lists `FeedbackBus`/`FeedbackNode` inline at `0x10`/`0x11` while the current enum moved
+    them to `0x80`/`0x81` and reused `0x10` for `FxShareSet`, and v112's `HasSource` is bit 1 where the
+    current enum puts it at bit 7. C#'s extension methods become free functions taking the value first, and
+    the ones returning `string` return `const char*` (null for an undeclared value, where C#'s `ToString()`
+    would render the number).
+  - Faithfulness over tidiness, as with the version family: `EManagedArrayType.cs` sits in
+    `UE4/Objects/Chaos/GeometryCollection` but declares `CUE4Parse.UE4.Chaos.GeometryCollection` — no
+    `Objects` — and the port keeps the mismatch. `EPlaylistFlags.cs` declares `EPlayListFlags` (capital L) and
+    `EAkCompanyID.cs` declares `AkCompanyID`; both keep the C# spelling rather than the file name.
+  - Two C# syntaxes have no C++ equivalent and are rewritten: binary literals with `_` digit separators
+    (`0b0110_0000` → `0b0110'0000`), and a member initialised from another enum's member
+    (`ERHIZBuffer.IsInverted != 0 ? … : …` → an explicit `static_cast`). That RHI ternary is **kept rather
+    than folded** even though `IsInverted` is hardcoded to 0 in CUE4Parse, so that the four depth comparisons
+    follow automatically if it is ever corrected to UE's real `FarPlane < NearPlane`.
+  - C#'s `#pragma warning disable CA1069` marks *intentional* duplicate values (`EAkCurveInterpolation`,
+    `EAkPropID`, `EAkBuiltInParam`). C++ allows duplicates silently, so the risk runs the other way and the
+    aliases are pinned by test; where a generated `NameOf`/`DescriptionOf` switch would have had two cases at
+    one value, the later member is emitted as a comment naming the winner, mirroring .NET.
 - **The IO Store layer is ported end to end — container *and* Zen assets.** `IoStoreReader` mounts,
   resolves chunks (perfect-hash with overflow fallback included, comparing `GetHashCode`s exactly as C# does),
   splits partitioned `.ucas` sets and extracts through the block loop; `ContainerHeader()` is a real lazy

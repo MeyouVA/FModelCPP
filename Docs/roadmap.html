@@ -165,16 +165,16 @@
 
   <div class="meters">
     <div class="meter">
-      <div class="top"><span class="name">CUE4Parse — parsing core</span><span class="pct">~65%</span></div>
-      <div class="sub">342 C++ files · 41 test suites green</div>
-      <div class="bar"><span style="width:65%"></span></div>
+      <div class="top"><span class="name">CUE4Parse — parsing core</span><span class="pct">~70%</span></div>
+      <div class="sub">498 C++ files · 42 test suites green</div>
+      <div class="bar"><span style="width:70%"></span></div>
       <p class="note">The bottom-up reading spine is complete through the tagged-property system, and both package formats (classic <code>.uasset</code> and Zen/IO Store) now load exports end to end. Measured against the reading path; by raw file count it's ~11% (the 1,799 C# files are inflated by a huge asset-type + Wwise long tail).</p>
     </div>
     <div class="meter">
-      <div class="top"><span class="name">FModel — desktop app</span><span class="pct">~10%</span></div>
-      <div class="sub">37 C++ files · 2 test suites · Qt 6.8 Widgets</div>
-      <div class="bar"><span style="width:10%"></span></div>
-      <p class="note">Window shell, theme, resources, the MVVM foundation and the whole persisted-settings tree are in — the app can now read and rewrite a real <code>AppSettings.json</code>. The view / view-model / rendering layers (228 C# files) are still ahead.</p>
+      <div class="top"><span class="name">FModel — desktop app</span><span class="pct">~13%</span></div>
+      <div class="sub">45 C++ files · 3 test suites · Qt 6.8 Widgets</div>
+      <div class="bar"><span style="width:13%"></span></div>
+      <p class="note">Window shell, theme, resources, the MVVM foundation, the whole persisted-settings tree and the root <code>ApplicationViewModel</code> are in — the app can now read and rewrite a real <code>AppSettings.json</code>. The view / view-model / rendering layers (228 C# files) are still ahead.</p>
     </div>
   </div>
 
@@ -199,7 +199,7 @@
         <div class="card-head"><span>The spine — done</span><span class="tag done">10 layers</span></div>
         <ul class="list">
           <li><span class="li-mark"><span class="dot done"></span></span><div class="li-body"><div class="li-title">Readers layer</div><div class="li-desc"><code>FArchive</code>, byte / pointer / stream / big-endian / random-access + compressed proxy</div></div></li>
-          <li><span class="li-mark"><span class="dot done"></span></span><div class="li-body"><div class="li-title">Versions</div><div class="li-desc"><code>EGame</code>, <code>ObjectVersion</code>, <code>FPackageFileVersion</code>, <code>VersionContainer</code> (incl. the per-game Options / MapStructTypes tables)</div></div></li>
+          <li><span class="li-mark"><span class="dot done"></span></span><div class="li-body"><div class="li-title">Versions</div><div class="li-desc"><code>EGame</code>, <code>ObjectVersion</code>, <code>FPackageFileVersion</code>, <code>VersionContainer</code> (incl. the per-game Options / MapStructTypes tables), <code>VersionUtils</code> + the whole <code>F*{Object,Custom}Version</code> family</div></div></li>
           <li><span class="li-mark"><span class="dot done"></span></span><div class="li-body"><div class="li-title">Compression codecs</div><div class="li-desc">Zlib/Gzip/LZ4 built-in (from-scratch DEFLATE + LZ4 block); Oodle/Zstd via runtime native-library load</div></div></li>
           <li><span class="li-mark"><span class="dot done"></span></span><div class="li-body"><div class="li-title">Core/Misc value structs</div><div class="li-desc"><code>FGuid</code>, <code>FDateTime</code>, <code>FEngineVersion</code>, <code>FSHAHash</code> …</div></div></li>
           <li><span class="li-mark"><span class="dot done"></span></span><div class="li-body"><div class="li-title">Core/Math — colors, vectors, geometry, bounds</div><div class="li-desc"><code>FColor</code>, <code>FLinearColor</code>, all vector types, <code>FQuat</code>/<code>FRotator</code>/<code>FMatrix</code>/<code>FTransform</code>/<code>FPlane</code>, and now <code>FBox</code>/<code>FBoxSphereBounds</code>/<code>FSphere</code>/<code>TRange</code> — every C# file bar <code>UnrealMathSSE</code></div></div></li>
@@ -208,6 +208,7 @@
           <li><span class="li-mark"><span class="dot done"></span></span><div class="li-body"><div class="li-title">Import / export map</div><div class="li-desc"><code>ObjectResource</code>, <code>FAssetArchive</code>, <code>ResolvedObject</code></div></div></li>
           <li><span class="li-mark"><span class="dot done"></span></span><div class="li-body"><div class="li-title">Tagged-property system</div><div class="li-desc">~30 property types, <code>FPropertyTag</code>, <code>UScript</code>Array/Map/Set, <code>FStructFallback</code></div></div></li>
           <li><span class="li-mark"><span class="dot done"></span></span><div class="li-body"><div class="li-title">Package + UObject + first assets</div><div class="li-desc"><code>UDataTable</code>, <code>UCurveTable</code>, <code>UCurveLinearColor</code>, <code>UStringTable</code>, redirector</div></div></li>
+          <li><span class="li-mark"><span class="dot done"></span></span><div class="li-body"><div class="li-title">Every enum-only file in the tree</div><div class="li-desc">113 headers: the Wwise (36 + 15 flags) and FMod (16) enum directories whole, plus the 46 remaining enum-only files anywhere else — <code>Kismet</code>, <code>RigVM</code>, <code>RHI</code>, <code>i18N</code>, <code>Texture</code>, <code>Material</code>, <code>Animation</code>, <code>WorldPartition</code>, <code>VirtualFileCache</code> … Includes the <code>[Description]</code> tables FModel uses as i18n keys and the hand-written Wwise version-mapping helpers</div></div></li>
         </ul>
       </div>
 
@@ -293,7 +294,7 @@
           <div class="phase-top"><span class="phase-tag">1</span><span class="phase-name">View-models</span></div>
           <p class="phase-goal">The logic layer behind every control.</p>
           <ul class="list" style="padding:0; margin:0 -18px;">
-            <li><span class="li-mark"><span class="dot pend"></span></span><div class="li-body"><div class="li-title">ViewModels</div><div class="li-desc"><code>ApplicationViewModel</code>, <code>CUE4ParseViewModel</code>, <code>ThreadWorker</code>, tab/search, all commands</div></div><span class="li-count">45</span></li>
+            <li><span class="li-mark"><span class="dot pend"></span></span><div class="li-body"><div class="li-title">ViewModels</div><div class="li-desc"><code>ApplicationViewModel</code> + <code>LoadingModesViewModel</code> done; <code>CUE4ParseViewModel</code>, <code>ThreadWorker</code>, tab/search and all commands still ahead</div></div><span class="li-count">45</span></li>
             <li><span class="li-mark"><span class="dot wip"></span></span><div class="li-body"><div class="li-title">API endpoints</div><div class="li-desc">the response DTOs <code>UserSettings</code> stores are in; the endpoints and HTTP layer are not</div></div><span class="li-count">13</span></li>
           </ul>
         </div>
@@ -340,8 +341,8 @@
         <p>The last unported piece of <code>AbstractFileProvider</code>: <code>.upluginmanifest</code>/<code>.uplugin</code> JSON, which is what makes <code>FixPath</code>'s virtual-root branch do anything for plugin content.</p>
       </div>
       <div class="next-item">
-        <div class="h"><span class="n">app</span> ApplicationViewModel skeleton</div>
-        <p>The root VM that owns <code>FStatus</code> + the tab control — turns the inert shell into something the menu commands can drive. Now unblocked: it reads <code>UserSettings</code> throughout.</p>
+        <div class="h"><span class="n">app</span> The command layer</div>
+        <p><code>MenuCommand</code> / <code>CopyCommand</code> / <code>RightClickMenuCommand</code> on top of the ported <code>ViewModelCommand&lt;T&gt;</code> base — replaces <code>MainWindow</code>'s <code>onMenuCommand</code> stand-in, and is what the now-live <code>ApplicationViewModel</code> was missing.</p>
       </div>
       <div class="next-item">
         <div class="h"><span class="n">app</span> Settings dialog</div>
@@ -354,7 +355,7 @@
   <footer>
     <span>U:\Programs\AI\Claude\FModelCPP</span>
     <span>MSVC + Ninja · Qt 6.8.3</span>
-    <span>41 test suites green</span>
+    <span>45 test suites green</span>
     <span>faithful C#→C++ · bottom-up</span>
   </footer>
 </div>
