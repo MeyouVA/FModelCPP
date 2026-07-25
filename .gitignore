@@ -1,2 +1,8 @@
 /build/
 *.user
+
+# Oodle is proprietary (RAD Game Tools) and must not be redistributed — each user supplies their own copy
+# in ThirdParty/native/<platform>. Everything else in that folder is redistributable and stays tracked.
+oodle-data-shared.dll
+oo2core_9_win64.dll
+liboodle-data-shared.so
