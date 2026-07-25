@@ -221,10 +221,15 @@ static void TestPackedDataBitMasks()
     pd.PackedData = 1u | (1u << 29);          // 5.4+ CPU copy
     CHECK(pd.HasCpuCopy() && !pd.HasOptData());
 
-    // The slice mask is everything below the HasOptData bit, so all three flag bits must be excluded from
-    // the count -- getting that wrong makes every cubemap report ~2 billion slices.
+    // FAITHFUL QUIRK: the slice mask is BitMask_HasOptData - 1, i.e. everything below bit 30 -- which
+    // still INCLUDES the HasCpuCopy bit 29. C# has exactly this mask, so a texture with a CPU copy reports
+    // its slice count with bit 29 set. Kept rather than "fixed": UE only ever writes small slice counts,
+    // and diverging here would make the port disagree with the C# on the same bytes.
     pd.PackedData = 6u | (1u << 31) | (1u << 30) | (1u << 29);
+    CHECK(pd.GetNumSlices() == static_cast<int>(6u | (1u << 29)));
+    pd.PackedData = 6u | (1u << 31) | (1u << 30);
     CHECK(pd.GetNumSlices() == 6);
+    pd.PackedData = 6u | (1u << 31) | (1u << 30) | (1u << 29);
     CHECK(pd.IsCubemap() && pd.HasOptData() && pd.HasCpuCopy());
 
     pd.OptData.NumMipsInTail = 3;

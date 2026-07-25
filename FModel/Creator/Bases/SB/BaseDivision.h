@@ -1,0 +1,10 @@
+// Stub for FModel/Creator/Bases/SB/BaseDivision.cs
+//
+// NOT YET PORTED. The file exists so the C++ tree mirrors the C# source one-to-one at the same
+// relative path; it declares nothing and nothing includes it. Replace the body with the real port.
+#pragma once
+
+namespace FModel::Creator::Bases::SB
+{
+    // TODO: port BaseDivision from FModel/Creator/Bases/SB/BaseDivision.cs
+}

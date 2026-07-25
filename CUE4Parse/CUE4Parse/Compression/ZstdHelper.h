@@ -1,8 +1,9 @@
 // Structural analog of the Zstd path in CUE4Parse/Compression/Compression.cs.
 //
-// C# decompresses Zstd with the managed ZstdSharp package. The C++ port has no such dependency and a full
-// Zstd decoder is too large to vendor here, so — like OodleHelper — this loads a native libzstd at runtime
-// and registers ZSTD_decompress with the Compression registry.
+// C# decompresses Zstd with the managed ZstdSharp package (a from-scratch managed port of the reference
+// decoder). The C++ port uses the reference implementation itself instead: this loads a native libzstd at
+// runtime — exactly as OodleHelper does for Oodle — and registers ZSTD_decompress with the Compression
+// registry. Nothing Zstd-shaped is decoded until Initialize succeeds.
 #pragma once
 
 #include <string>

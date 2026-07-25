@@ -200,6 +200,9 @@ namespace CUE4Parse::UE4::Assets
             obj->Flags = static_cast<Exports::EObjectFlags>(obj->Flags | Exports::RF_LoadCompleted);
             obj->PostLoad();
 
+            // Keep the clone alive: anything the export read lazily still points into it.
+            _exportArClones.push_back(std::move(arBase));
+
             ExportsLazy[i] = std::move(obj);
         }
         return ExportsLazy[i].get();

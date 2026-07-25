@@ -104,6 +104,12 @@ namespace CUE4Parse::UE4::Assets
         std::vector<ResolvedObject*> _importCache;
         // Clonable archive positioned over the export data (uexp, or uasset when there is no uexp).
         std::unique_ptr<FAssetArchive> _exportAr;
+
+        // One cloned archive per loaded export, kept alive for as long as the package is. Lazily-read bulk
+        // data (TBulkData holds a raw FAssetArchive*) reads from the clone the export was deserialized
+        // with, and C# keeps that archive alive through the closure's GC reference; here the package has to
+        // own it explicitly, or the first Data() call after deserialization reads freed memory.
+        std::vector<std::unique_ptr<Readers::FArchive>> _exportArClones;
         std::unique_ptr<ResolvedObject> _selfResolved;
     };
 }

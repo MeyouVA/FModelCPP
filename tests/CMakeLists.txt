@@ -193,3 +193,11 @@ add_test(NAME test_audio_providers COMMAND test_audio_providers)
 add_executable(test_texture test_texture.cpp)
 target_link_libraries(test_texture PRIVATE CUE4Parse)
 add_test(NAME test_texture COMMAND test_texture)
+
+add_executable(test_zstd test_zstd.cpp)
+target_link_libraries(test_zstd PRIVATE CUE4Parse)
+add_test(NAME test_zstd COMMAND test_zstd)
+
+add_executable(test_brotli test_brotli.cpp)
+target_link_libraries(test_brotli PRIVATE CUE4Parse)
+add_test(NAME test_brotli COMMAND test_brotli)

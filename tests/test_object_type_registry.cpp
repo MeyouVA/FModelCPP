@@ -244,7 +244,10 @@ static void TestExclusions()
     ExpectUnregistered("Class");
     ExpectUnregistered("MaterialInterface");
     // Names with no ported type still fall through (ConstructObject then builds a bare UObject).
-    ExpectUnregistered("Texture2D");
+    // "Texture2D" used to be the example here; it is registered since the texture slice. "UTexture" is
+    // abstract in C# and so is deliberately still absent.
+    ExpectUnregistered("Texture");
+    ExpectUnregistered("StaticMesh");
     ExpectUnregistered("");
 }
 

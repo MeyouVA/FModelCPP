@@ -1,5 +1,6 @@
 // Structural analog of the Zstd path in CUE4Parse/Compression/Compression.cs.
 #include "ZstdHelper.h"
+#include "NativeLibrary.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -24,23 +25,9 @@ namespace CUE4Parse::Compression
         ZSTD_decompress_t g_decompress = nullptr;
         ZSTD_isError_t g_isError = nullptr;
 
-        void* LoadLib(const char* name)
-        {
-#if defined(_WIN32)
-            return reinterpret_cast<void*>(::LoadLibraryA(name));
-#else
-            return ::dlopen(name, RTLD_NOW);
-#endif
-        }
-
-        void* GetSym(void* lib, const char* name)
-        {
-#if defined(_WIN32)
-            return reinterpret_cast<void*>(::GetProcAddress(reinterpret_cast<HMODULE>(lib), name));
-#else
-            return ::dlsym(lib, name);
-#endif
-        }
+        // Both live in NativeLibrary.cpp now — see the note there about dependent DLLs.
+        void* LoadLib(const char* name) { return LoadNativeLibrary(name); }
+        void* GetSym(void* lib, const char* name) { return GetNativeSymbol(lib, name); }
     }
 
     bool ZstdHelper::IsInitialized() { return g_decompress != nullptr; }
@@ -49,19 +36,21 @@ namespace CUE4Parse::Compression
     {
         if (g_decompress != nullptr) return true;
 
+        // Same search order as Oodle — see NativeLibrary.h. Nothing machine-specific is compiled in.
         void* lib = nullptr;
-        if (!path.empty())
-        {
-            lib = LoadLib(path.c_str());
-        }
-        else
-        {
 #if defined(_WIN32)
-            lib = LoadLib(ZSTD_NAME_WIN);
-            if (lib == nullptr) lib = LoadLib(ZSTD_NAME_WIN_ALT);
+        const char* const names[] = {ZSTD_NAME_WIN, ZSTD_NAME_WIN_ALT};
 #else
-            lib = LoadLib(ZSTD_NAME_LINUX);
+        const char* const names[] = {ZSTD_NAME_LINUX};
 #endif
+        for (const char* name : names)
+        {
+            for (const std::string& candidate : NativeLibraryCandidates(name, path))
+            {
+                lib = LoadLib(candidate.c_str());
+                if (lib != nullptr) break;
+            }
+            if (lib != nullptr) break;
         }
         if (lib == nullptr) return false;
 

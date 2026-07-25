@@ -1,5 +1,6 @@
 // Ported (structurally) from CUE4Parse/Compression/OodleHelper.cs.
 #include "OodleHelper.h"
+#include "NativeLibrary.h"
 
 #include <cstdint>
 
@@ -24,23 +25,9 @@ namespace CUE4Parse::Compression
 
         OodleLZ_Decompress_t g_decompress = nullptr;
 
-        void* LoadLib(const char* name)
-        {
-#if defined(_WIN32)
-            return reinterpret_cast<void*>(::LoadLibraryA(name));
-#else
-            return ::dlopen(name, RTLD_NOW);
-#endif
-        }
-
-        void* GetSym(void* lib, const char* name)
-        {
-#if defined(_WIN32)
-            return reinterpret_cast<void*>(::GetProcAddress(reinterpret_cast<HMODULE>(lib), name));
-#else
-            return ::dlsym(lib, name);
-#endif
-        }
+        // Both live in NativeLibrary.cpp now — see the note there about dependent DLLs.
+        void* LoadLib(const char* name) { return LoadNativeLibrary(name); }
+        void* GetSym(void* lib, const char* name) { return GetNativeSymbol(lib, name); }
     }
 
     bool OodleHelper::IsInitialized() { return g_decompress != nullptr; }
@@ -49,19 +36,23 @@ namespace CUE4Parse::Compression
     {
         if (g_decompress != nullptr) return true;
 
+        // Every place worth looking, in NativeLibrary.h's documented order — the caller's path first, then
+        // the env override, the executable's own directory and the in-tree ThirdParty/native folder, and
+        // finally the bare name for the OS loader. No absolute path is compiled in.
         void* lib = nullptr;
-        if (!path.empty())
-        {
-            lib = LoadLib(path.c_str());
-        }
-        else
-        {
 #if defined(_WIN32)
-            lib = LoadLib(OODLE_NAME_CURRENT);
-            if (lib == nullptr) lib = LoadLib(OODLE_NAME_OLD);
+        const char* const names[] = {OODLE_NAME_CURRENT, OODLE_NAME_OLD};
 #else
-            lib = LoadLib(OODLE_NAME_LINUX);
+        const char* const names[] = {OODLE_NAME_LINUX};
 #endif
+        for (const char* name : names)
+        {
+            for (const std::string& candidate : NativeLibraryCandidates(name, path))
+            {
+                lib = LoadLib(candidate.c_str());
+                if (lib != nullptr) break;
+            }
+            if (lib != nullptr) break;
         }
         if (lib == nullptr) return false;
 
