@@ -1,6 +1,6 @@
 # FModelCPP — port status & roadmap
 
-*Updated 2026-07-24*
+*Updated 2026-07-25*
 
 A slow, structure-faithful port of **FModel** (the Unreal Engine asset explorer) and its parsing core
 **CUE4Parse**, from C#/WPF to C++/Qt. Two tracks advance in parallel: the headless parsing library, and the
@@ -13,7 +13,7 @@ differences from the C# source.
 
 | Track | Progress | Size | Notes |
 | --- | --- | --- | --- |
-| **CUE4Parse** — parsing core | `██████████████░░░░░░` **~72%** | 852 C++ files · 46 test suites | Measured against the *reading path* |
+| **CUE4Parse** — parsing core | `██████████████░░░░░░` **~72%** | 906 real C++ files (+1,041 stubs) · 52 test suites | Measured against the *reading path* |
 | **FModel** — desktop app | `██▌░░░░░░░░░░░░░░░░░` **~13%** | 45 C++ files · 3 test suites · Qt 6.8 Widgets | |
 
 **CUE4Parse.** The bottom-up reading spine is complete through the tagged-property system, and both package
@@ -22,9 +22,15 @@ well — the Wwise tree (archive, bank objects, ~50 plugin parameter sets, the w
 FMOD `.bank` chunk walker with its node graph.
 
 Three different denominators, all true: **~72%** of the reading path, the running per-layer tally sits nearer
-**~78%**, and by strict same-relative-path file count it is **720 of the 1,799 C# files (40%)**. The strict
+**~78%**, and by strict same-relative-path file count it is **758 of the 1,799 C# files (42%)**. The strict
 count runs below the tally because a handful of C# files fold into another header rather than getting their
 own (`FPackedNode.cs`, the relocated Wwise leaf types, `PropertyUtil` split out of `UObject.cs`).
+
+The remaining 1,041 C# files now all have a **placeholder header** at their exact mirrored path, carrying
+nothing but `#pragma once`, the correct namespace and a `TODO: port …` line. They are not included by
+anything and compile into nothing — they exist so the tree shape matches the C# source and so the gap is
+visible by browsing rather than by diffing two file lists. A file with real content is ported; a file whose
+first line reads `// Stub for CUE4Parse/…` is not.
 
 **FModel.** Window shell, theme, resources, the MVVM foundation, the whole persisted-settings tree and the
 root `ApplicationViewModel` are in — the app can now read and rewrite a real `AppSettings.json`. The view /
@@ -41,6 +47,35 @@ parses 15 and rejects 3, matching an independent reference parser on every file 
 are unreadable and at which byte. Those three are written by dumpers whose format CUE4Parse does not
 implement (one carries 784 KB of trailing data), so the port deliberately fails them exactly as the C# does
 rather than guessing.
+
+A second retail install — **Poppy Playtime Chapter 5 (UE 5.6)**, 6 containers, 27,669 files — covers what
+Satisfactory cannot: it has a `.usmap` the port *can* read, so unversioned properties actually resolve.
+There, 58,993 of 94,685 exports read tagged properties, and the typed audio path runs on real cooked data:
+**all 3,000 `USoundWave` exports read a valid `CompressedDataGuid` and a `FStreamedAudioPlatformData` with
+non-empty chunks** (`BINKA`, a 28-byte header chunk plus the payload), while the 566 `UMetaSoundSource`
+exports correctly carry *no* wave payload — that is `SoundBaseDeserialize` opting out, exactly as in the C#.
+
+> Mappings are load-bearing, not optional, for UE5. Satisfactory's own shipped `.usmap` is one of the three
+> unreadable ones, so across its 110,664 exports the port reads **zero** tagged properties — every typed
+> `Deserialize` bails at the unversioned header. Container access and property access are separate problems,
+> and only the first one is solved for that game.
+
+**Both audio providers are verified on shipped games too**, and they are the one substantial reader that
+does *not* depend on the mappings problem. On the same Satisfactory install — 2,497 `.bnk` and 6,258 loose
+`.wem` — `WwiseProvider` indexes every bank and **2,470 of the 2,502 `UAkAudioEvent` exports resolve to at
+least one `.wem`, 11,370 media references in all**, with sampled reads pulling the real bytes back out of
+the pak (32 KB–231 KB each). That works *despite* the unreadable `.usmap`, because with no `ShortID`
+property to read the event id falls back to the FNV-1 hash of the export's own name, which comes from the
+export map. For FMOD, a retail **Subliminal (UE 5.7)** install: all 7 shipped banks parse (867 events, 2,107
+waveform resources, 6 FSB5 containers), and **776 of its 786 `UFMODEvent` exports resolve to at least one
+sample** through the `AssetGuid` → bank-GUID join.
+
+> Real banks found a real bug, one layer down. Every one of Subliminal's banks died with *"Read size is
+> bigger than remaining archive length"* inside its `SND` chunk. The cause: a chunk's declared size is
+> measured from the chunk body, but the FSB5 container starts `relativeOffset` bytes further in, so the size
+> always names that many more bytes than the file has. C# never notices because it takes a *lazy*
+> `Substream` and its loader only reads the front; the port read eagerly and threw. Clamping the read to
+> what is actually there took all 7 banks from 0 events to 867. `tests/test_fmod_bank.cpp` now pins it.
 
 **Legend.** ✅ ported & tested · 🟡 stub or subset in place · ⬜ not started.
 Counts in parentheses are **C# source files remaining**.
@@ -84,6 +119,14 @@ unencrypted UE package end-to-end; what remains is real-container access and the
   chunks incl. the packed radix tree that maps GUIDs to `event:/…` paths, FMOD's `hashlittle2`, the FSB5
   bit-reverse/XOR deobfuscation, and `EventNodesResolver`'s graph walk from an event to its waveforms.
   **Bank versions 0x2c–0x92**
+- ✅ **Both audio providers** — `WwiseProvider` and `FModProvider`, the layer above the two bank readers.
+  Wwise: bulk-loads every `.bnk`/`.pck`/`.wem` a game ships (in the paks and loose beside them), indexes
+  every bank's HIRC section into one flat id→node table, and resolves an event either from its cooked-data
+  struct or by walking that table from an id — which, when the export carries no `ShortID` at all, is the
+  **FNV-1 hash of its own name**, so this path works even on a game with no usable `.usmap`. FMOD: finds
+  banks by both routes, merges them twice (by file-name group, then by bank GUID), reads `StudioBankKey` /
+  `BankOutputDirectory` out of `DefaultEngine.ini`, and resolves each event's node graph to its waveforms.
+  Neither decodes audio — see the note under Gaps
 - ✅ **Bulk data & payloads** — `TBulkData`/`FByteBulkData`/`FByteBulkDataHeader` with all three header
   readings (Io bulk-data map, classic data-resource map, inline), `FAssetArchive`'s payload registry and the
   `.ubulk`/`.uptnl`/`.m.ubulk` lookups, the partial-read `header` threaded through `GameFile`/`Extract`, and
@@ -123,15 +166,19 @@ unencrypted UE package end-to-end; what remains is real-container access and the
 
 *The bulk of the codebase — port on demand, by importance.*
 
-- ⬜ **Texture** — `UTexture2D` + platform decode
+- ✅ **Texture** — `UTexture2D` + platform data (the whole 29-file `Exports/Texture` tree, `EPixelFormat`
+  + the geometry table, `FTexturePlatformData`, mip chains, virtual-texture built data, 27 registered
+  types). Pixel *decoding* (BCn/ASTC/ETC) lives in the separate `CUE4Parse-Conversion` assembly and is
+  still ahead.
 - ⬜ **Static & skeletal mesh**
 - ⬜ **Material / instances**
 - ⬜ **Animation + ACL compression**
-- 🟡 **Sound + Wwise + FMOD** *(2 remaining)* — both bank formats and both export trees are in:
-  `UE4/Wwise` (211/212, bar `WwiseProvider`), `UE4/FMod` (105/106, bar `FModProvider`), and every
-  `Assets/Exports/` `Wwise` (46) / `FMod` (7) / `Sound` (22) / `MetaSound` (24) asset type. What remains: the
-  two providers — both blocked on an external audio decoder and the object-loading path — and registering the
-  new export types in `ObjectTypeRegistry`
+- ✅ **Sound + Wwise + FMOD** *(complete)* — both bank formats, both export trees and both providers:
+  `UE4/Wwise` (212/212), `UE4/FMod` (106/106), and every `Assets/Exports/` `Wwise` (46) / `FMod` (7) /
+  `Sound` (22) / `MetaSound` (24) asset type — all 64 concrete types registered in `ObjectTypeRegistry`, so
+  a cooked package constructs them instead of a bare `UObject`. `WwiseProvider` and `FModProvider` join the
+  bank readers to the export types and answer "which sounds does this event play?"; audio is still never
+  *decoded* (a `.wem` comes back as deferred bytes, an FMOD sample as a reference into its FSB5 container)
 - ⬜ **Niagara, Landscape, World/Level, …**
 
 ### Phase D · Supporting systems
@@ -196,11 +243,10 @@ Each is a self-contained, testable unit — in the standing bottom-up order. One
 
 | # | Track | Slice | Why |
 | --- | --- | --- | --- |
-| 1 | core | **`ObjectTypeRegistry` entries for the audio types** | The Wwise (46), FMod (7), Sound (22) and MetaSound (24) export types all parse, but none are registered, so a cooked package still loads them as a generic `UObject`. Registering them is what makes the last four slices reachable from a real `.pak`. |
-| 2 | core | **`UTexture2D` + platform decode** | The first slice of the asset-type long tail, and the one the container path was blocking. Now that a retail UE 5.6 install reads end to end, the next thing worth *looking at* is a texture. |
-| 3 | core | **`LoadVirtualPaths` + plugin manifests** | The last unported piece of `AbstractFileProvider`: `.upluginmanifest`/`.uplugin` JSON, which is what makes `FixPath`'s virtual-root branch do anything for plugin content. |
-| 4 | app | **The command layer** | `MenuCommand` / `CopyCommand` / `RightClickMenuCommand` on top of the ported `ViewModelCommand<T>` base — replaces `MainWindow`'s `onMenuCommand` stand-in, and is what the now-live `ApplicationViewModel` was missing. |
-| 5 | app | **Settings dialog** | `SettingsViewModel` + the view, binding the settings tree that just landed — the first place the ported `description()` overloads earn their keep. |
+| 1 | core | **A Zstandard decompressor** | Small, and it unblocks something disproportionate: most modern `.usmap` files are Zstd-compressed, and without mappings a UE5 Zen package reads *no properties at all*. Today only pre-decompressed mappings work. |
+| 2 | core | **`LoadVirtualPaths` + plugin manifests** | The last unported piece of `AbstractFileProvider`: `.upluginmanifest`/`.uplugin` JSON, which is what makes `FixPath`'s virtual-root branch do anything for plugin content. |
+| 3 | app | **The command layer** | `MenuCommand` / `CopyCommand` / `RightClickMenuCommand` on top of the ported `ViewModelCommand<T>` base — replaces `MainWindow`'s `onMenuCommand` stand-in, and is what the now-live `ApplicationViewModel` was missing. |
+| 4 | app | **Settings dialog** | `SettingsViewModel` + the view, binding the settings tree that just landed — the first place the ported `description()` overloads earn their keep. |
 
 ### Retired: "IO Store uncompressed-block reads"
 
@@ -215,7 +261,7 @@ version parses all 23,699. The gate is now pinned both ways by `tests/test_zen_p
 
 ---
 
-`U:\Programs\AI\Claude\FModelCPP` · MSVC + Ninja · Qt 6.8.3 · **49 test suites green** · faithful C#→C++, bottom-up
+`U:\Programs\AI\Claude\FModelCPP` · MSVC + Ninja · Qt 6.8.3 · **51 test suites green** · faithful C#→C++, bottom-up
 
 > **Declaring the engine version is not optional.** A wrong `EGame` does not fail cleanly — the Zen summary,
 > the bulk-data map and the property path are all version-gated, so an off-by-one version reads plausible

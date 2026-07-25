@@ -14,6 +14,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include "FWaveformRef.h"
 #include "../FModReader.h"
 #include "../Nodes/EventNode.h"
 #include "../Nodes/TimelineNode.h"
@@ -28,16 +29,7 @@
 
 namespace CUE4Parse::UE4::FMod::Utils
 {
-    struct FWaveformRef
-    {
-        int32_t SoundBankIndex = 0;
-        int32_t SubsoundIndex = 0;
-
-        bool operator==(const FWaveformRef& o) const
-        {
-            return SoundBankIndex == o.SoundBankIndex && SubsoundIndex == o.SubsoundIndex;
-        }
-    };
+    // FWaveformRef now lives in FWaveformRef.h so FModReader can name it too.
 
     class EventNodesResolver
     {

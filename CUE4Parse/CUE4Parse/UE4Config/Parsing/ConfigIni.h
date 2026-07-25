@@ -8,6 +8,8 @@
 
 #include "IniToken.h"
 
+namespace UE4Config::Evaluation { class PropertyEvaluator; }
+
 namespace UE4Config::Parsing
 {
     class ConfigIniSection
@@ -52,6 +54,14 @@ namespace UE4Config::Parsing
         // Collects the instructions for sectionName/propertyName across every section with that name.
         void FindPropertyInstructions(const std::string& sectionName, const std::string& propertyName,
                                       std::vector<const InstructionToken*>& outInstructions) const;
+
+        // C#'s EvaluatePropertyValues(sectionName, propertyName, values, evaluator = null): folds the
+        // property's instructions into `values` through the Evaluation layer. A null evaluator means the
+        // default one. Declared here (as in the package, where ConfigIni references UE4Config.Evaluation)
+        // but implemented in the .cpp, since the evaluator header includes this one.
+        void EvaluatePropertyValues(const std::string& sectionName, const std::string& propertyName,
+                                    std::vector<std::string>& values,
+                                    Evaluation::PropertyEvaluator* evaluator = nullptr) const;
 
         // The first section with this name, or null.
         const ConfigIniSection* FindSection(const std::string& sectionName) const;

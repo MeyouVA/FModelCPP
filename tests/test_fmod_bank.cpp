@@ -1048,6 +1048,61 @@ static void TestMerge()
     CHECK(src.WavEntries[G(0x900)] == nullptr);
 }
 
+// ---------------------------------------------------------------- SND / SNDH
+
+// Regression: the SND chunk's declared size is measured from the chunk *body*, but the FSB5 container it
+// points at starts `relativeOffset` bytes further in (the SNDH header carries the absolute offset). So on
+// every real bank the last SND chunk names exactly `relativeOffset` more bytes than the file actually has.
+// C# gets away with it because it takes a lazy Substream, which may name bytes that are not there as long as
+// nobody reads them, and FsbLoader only ever reads the front of the FSB5. The port reads eagerly, so it must
+// clamp. Before it did, every shipped bank died with "Read size is bigger than remaining archive length".
+static void TestSoundDataOverhang()
+{
+    SetVersion(0x83);
+
+    // FSB5 header: "FSB5", version, then the sub-sound count ParseSampleCount reads.
+    Buf fsb;
+    fsb.Tag("FSB5").U32(1).U32(7).Pad(8); // 20 bytes
+
+    // Laid out so the numbers are checkable by hand:
+    //   12..28   FMT   (8 header + 8 payload)
+    //   28..48   SNDH  (8 header + 12 payload)
+    //   48..104  SND   (8 header + 48 payload); body starts at 56, the FSB5 at 84
+    // so relativeOffset is 28, and fsbOffset(84) + declared size(48) = 132 runs 28 bytes past the 104-byte
+    // file — exactly the shape of a real bank.
+    const uint32_t fsbOffset = 84;
+
+    Buf sndh;
+    sndh.I16(1 << 1).U16(8).U32(fsbOffset).U32(static_cast<uint32_t>(fsb.Bytes.size()));
+
+    Buf snd;
+    snd.Pad(28).Cat(fsb); // 48 bytes: the gap the SNDH offset skips, then the container
+
+    Buf chunks;
+    chunks.Cat(Chunk("FMT ", Buf().I32(0x83).I32(0x83)));
+    chunks.Cat(Chunk("SNDH", sndh));
+    chunks.Cat(Chunk("SND ", snd));
+    Buf b = Bank(chunks);
+
+    CHECK(b.Bytes.size() == 104);
+    CHECK(fsbOffset + 48 > b.Bytes.size()); // the overhang this test is about
+
+    FByteArchive Ar = Open(b);
+    FModReader reader(Ar, "overhang.bank");
+
+    // Parsed rather than thrown, and the container came back with its sample count read from the header.
+    CHECK(reader.SoundBankData.size() == 1);
+    if (reader.SoundBankData.size() == 1)
+    {
+        CHECK(reader.SoundBankData[0].SampleCount == 7);
+        // Clamped to what the file really holds, not the declared size.
+        CHECK(reader.SoundBankData[0].Data.size() == fsb.Bytes.size());
+        CHECK(reader.ExtractTracks().size() == 7);
+        // No STBL chunk, so the sound-table route stays empty rather than indexing out of range.
+        CHECK(reader.ExtractSoundTableTracks().empty());
+    }
+}
+
 // ----------------------------------------------------------------
 
 int main()
@@ -1062,6 +1117,7 @@ int main()
     TestFsb5Decryption();
     TestParseHeader();
     TestWholeBank();
+    TestSoundDataOverhang();
     TestMerge();
 
     if (g_failures != 0)

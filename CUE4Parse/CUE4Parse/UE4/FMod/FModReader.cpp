@@ -11,6 +11,7 @@
 #include "Metadata/SoundDataInfo.h"
 #include "Metadata/SoundTable.h"
 #include "Metadata/StringTable.h"
+#include "Utils/JenkinsHash.h"
 
 // Node readers
 #include "Nodes/ControllerNode.h"
@@ -87,6 +88,65 @@ namespace CUE4Parse::UE4::FMod
     Objects::FModGuid FModReader::GetBankGuid() const
     {
         return BankInfo ? BankInfo->BaseGuid : Objects::FModGuid();
+    }
+
+    bool FModReader::TryGetSoundSampleFromSoundTable(const std::string& key, Utils::FWaveformRef& sample) const
+    {
+        sample = Utils::FWaveformRef();
+        if (SoundTable == nullptr)
+        {
+            // C# warns "Sound table or sound bank data is missing, cannot retrieve sound info". Its second
+            // half of that test (SoundBankData is null) cannot happen here: it is a vector, not a reference.
+            return false;
+        }
+
+        const uint64_t hash = Utils::JenkinsHash::Hash64(key);
+        const int subsoundIndex = SoundTable->Find(hash);
+
+        if (subsoundIndex == -1)
+        {
+            // C# warns that the key wasn't found in the sound table.
+            return false;
+        }
+
+        if (SoundTable->SoundbankIndex < static_cast<int32_t>(SoundBankData.size()))
+        {
+            const FModSoundBank& soundBank = SoundBankData[static_cast<size_t>(SoundTable->SoundbankIndex)];
+            if (subsoundIndex >= 0 && subsoundIndex < soundBank.SampleCount)
+            {
+                sample = Utils::FWaveformRef{SoundTable->SoundbankIndex, subsoundIndex};
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    std::vector<Utils::FWaveformRef> FModReader::ExtractTracks() const
+    {
+        std::vector<Utils::FWaveformRef> result;
+        for (size_t bank = 0; bank < SoundBankData.size(); bank++)
+        {
+            for (int32_t subsound = 0; subsound < SoundBankData[bank].SampleCount; subsound++)
+                result.push_back(Utils::FWaveformRef{static_cast<int32_t>(bank), subsound});
+        }
+        return result;
+    }
+
+    std::vector<Utils::FWaveformRef> FModReader::ExtractSoundTableTracks() const
+    {
+        // C# indexes SoundBankData[SoundTable.SoundbankIndex] without a bounds check and would throw on a
+        // bad index; the port refuses instead, since an out-of-range vector index is undefined behaviour
+        // rather than an exception.
+        if (SoundTable == nullptr || SoundTable->SoundbankIndex < 0 ||
+            SoundTable->SoundbankIndex >= static_cast<int32_t>(SoundBankData.size()))
+            return {};
+
+        std::vector<Utils::FWaveformRef> result;
+        const FModSoundBank& soundBank = SoundBankData[static_cast<size_t>(SoundTable->SoundbankIndex)];
+        for (int32_t subsound = 0; subsound < soundBank.SampleCount; subsound++)
+            result.push_back(Utils::FWaveformRef{SoundTable->SoundbankIndex, subsound});
+        return result;
     }
 
     void FModReader::ParseHeader(Readers::FArchive& Ar)

@@ -4,10 +4,11 @@
 // same namespace and type names. The behaviour below was verified against the real 0.7.2.97 assembly.
 //
 // Deliberate differences from the C# package:
-//   * Only the read path is ported: ConfigIniWriter, Write/CreateClone, the Evaluation and Hierarchy layers,
-//     and the mutation helpers (MergeDuplicateSections, GroupPropertyInstructions, CondenseWhitespace,
+//   * Only the read path is ported: ConfigIniWriter, Write/CreateClone, the Hierarchy layer, and the
+//     mutation helpers (MergeDuplicateSections, GroupPropertyInstructions, CondenseWhitespace,
 //     NormalizeLineEndings, Sanitize, Cleanup) are omitted — CUE4Parse never calls them. TODO if the FModel
-//     app ever needs to write an ini back out.
+//     app ever needs to write an ini back out. Of the Evaluation layer, only PropertyEvaluator is vendored
+//     (see Evaluation/PropertyEvaluator.h) — WwiseProvider and FModProvider read settings through it.
 //   * C#'s TextLine is a struct with an implicit string conversion; here it is a plain aggregate.
 #pragma once
 

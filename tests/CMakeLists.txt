@@ -181,3 +181,15 @@ add_test(NAME test_sound_metasound COMMAND test_sound_metasound)
 add_executable(test_fmod_bank test_fmod_bank.cpp)
 target_link_libraries(test_fmod_bank PRIVATE CUE4Parse)
 add_test(NAME test_fmod_bank COMMAND test_fmod_bank)
+
+add_executable(test_object_type_registry test_object_type_registry.cpp)
+target_link_libraries(test_object_type_registry PRIVATE CUE4Parse)
+add_test(NAME test_object_type_registry COMMAND test_object_type_registry)
+
+add_executable(test_audio_providers test_audio_providers.cpp)
+target_link_libraries(test_audio_providers PRIVATE CUE4Parse)
+add_test(NAME test_audio_providers COMMAND test_audio_providers)
+
+add_executable(test_texture test_texture.cpp)
+target_link_libraries(test_texture PRIVATE CUE4Parse)
+add_test(NAME test_texture COMMAND test_texture)

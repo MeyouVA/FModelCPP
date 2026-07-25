@@ -223,6 +223,56 @@ static void TestFindPropertyInstructions()
     CHECK(ini.Sections.size() == 2 && ini.FindSection("A") == nullptr && ini.FindSection("B") != nullptr);
 }
 
+// Every expectation below was produced by calling PropertyEvaluator.Default.ExecutePropertyInstructions on
+// the real Infrablack.UE4Config 0.7.2.97 assembly with the same instructions and starting list, so a
+// divergence here is a divergence from what C# CUE4Parse computes.
+static std::string Evaluate(const std::string& text, const std::string& section, const std::string& key,
+                            std::vector<std::string> seed = {})
+{
+    ConfigIni ini("Test");
+    ini.Read(text);
+    ini.EvaluatePropertyValues(section, key, seed);
+
+    std::string joined;
+    for (size_t i = 0; i < seed.size(); i++)
+    {
+        if (i != 0) joined += "|";
+        joined += seed[i];
+    }
+    return joined;
+}
+
+static void TestEvaluatePropertyValues()
+{
+    // Set replaces the whole list; Add appends only when absent; AddForce always appends; Remove erases
+    // *every* occurrence; RemoveAll clears regardless of the value written after it.
+    CHECK(Evaluate("[A]\nKey=x\n", "A", "Key", {"a", "b"}) == "x");
+    CHECK(Evaluate("[A]\n+Key=x\n", "A", "Key", {"a", "b"}) == "a|b|x");
+    CHECK(Evaluate("[A]\n+Key=a\n", "A", "Key", {"a", "b"}) == "a|b");
+    CHECK(Evaluate("[A]\n.Key=a\n", "A", "Key", {"a", "b"}) == "a|b|a");
+    CHECK(Evaluate("[A]\n-Key=a\n", "A", "Key", {"a", "b", "a"}) == "b");
+    CHECK(Evaluate("[A]\n-Key=z\n", "A", "Key", {"a", "b"}) == "a|b");
+    CHECK(Evaluate("[A]\n!Key\n", "A", "Key", {"a", "b"}).empty());
+
+    // Comparison is ordinal, so "A" neither collides with nor removes "a".
+    CHECK(Evaluate("[A]\n+Key=A\n", "A", "Key", {"a", "b"}) == "a|b|A");
+    CHECK(Evaluate("[A]\n-Key=A\n", "A", "Key", {"a", "b"}) == "a|b");
+
+    // A run of instructions applies in file order, across every section with that name; other sections and
+    // other keys are ignored, and the seed list survives when nothing matched.
+    CHECK(Evaluate("[A]\n+Key=a\n+Key=b\nKey=c\n.Key=c\n-Key=c\n", "A", "Key").empty());
+    CHECK(Evaluate("[A]\n+Key=a\n[B]\n+Key=zz\n[A]\n+Key=b\n", "A", "Key") == "a|b");
+    CHECK(Evaluate("[A]\n+Other=x\n", "A", "Key", {"seed"}) == "seed");
+    CHECK(Evaluate("[A]\n+Key=x\n", "Missing", "Key", {"seed"}) == "seed");
+
+    // The two shapes the providers actually read: a struct-ish scalar taken with Set, and a +list.
+    CHECK(Evaluate("[/Script/AkAudio.AkSettings]\nWwiseStagingDirectory=(Path=\"WwiseAudio\")\n",
+                   "/Script/AkAudio.AkSettings", "WwiseStagingDirectory") == "(Path=\"WwiseAudio\")");
+    CHECK(Evaluate("[/Script/WwisePackaging.WwisePackagingSettings]\n"
+                   "+AssetLibraries=/Game/A.A\n+AssetLibraries=/Game/B.B\n-AssetLibraries=/Game/A.A\n",
+                   "/Script/WwisePackaging.WwisePackagingSettings", "AssetLibraries") == "/Game/B.B");
+}
+
 // --------------------------------------------------------------------------------------------------
 // Provider fixtures — a minimal version-8 pak writer (see test_default_file_provider.cpp)
 // --------------------------------------------------------------------------------------------------
@@ -459,6 +509,7 @@ int main()
         TestHeadersCommentsAndWhitespace();
         TestLineEndings();
         TestFindPropertyInstructions();
+        TestEvaluatePropertyValues();
         TestLoadIniConfigs();
         TestGameDisplayNameVariants();
         TestPostMountKeepsWorkingArchives();

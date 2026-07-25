@@ -154,7 +154,9 @@ foundation** everything else builds on:
 | Wwise reader | `UE4/Wwise/WwiseReader.cs`, `Objects/AkEntry.cs`, `FDeferredByteData.cs` | `UE4/Wwise/WwiseReader.{h,cpp}`, `Objects/AkEntry.h`, `FDeferredByteData.h` |
 | Wwise asset types (41) | `UE4/Assets/Exports/Wwise/*.cs` | `UE4/Assets/Exports/Wwise/*.h` |
 | FMod asset types (7) | `UE4/Assets/Exports/FMod/*.cs` | `UE4/Assets/Exports/FMod/*.h` |
-| FMod bank tree (105) | `UE4/FMod/**/*.cs` (all but `FModProvider.cs`) | `UE4/FMod/**/*.h` (+ `FModReader.cpp`) |
+| FMod bank tree (106) | `UE4/FMod/**/*.cs` | `UE4/FMod/**/*.h` (+ `FModReader.cpp`) |
+| Wwise provider | `UE4/Wwise/WwiseProvider.cs` | `UE4/Wwise/WwiseProvider.{h,cpp}` |
+| FMod provider | `UE4/FMod/FModProvider.cs` | `UE4/FMod/FModProvider.{h,cpp}` |
 | Sound export tree (22) | `UE4/Assets/Exports/Sound/**/*.cs` | `UE4/Assets/Exports/Sound/**/*.h` (+ `USoundWave.cpp`) |
 | MetaSound export tree (24) | `UE4/Assets/Exports/MetaSound/*.cs` | `UE4/Assets/Exports/MetaSound/*.h` |
 | Parser exceptions | `UE4/Exceptions/ParserException.cs` | `UE4/Exceptions/ParserException.{h,cpp}` |
@@ -204,7 +206,7 @@ foundation** everything else builds on:
 | Property value base | `UE4/.../Properties/FPropertyTagType.cs` | `UE4/Assets/Objects/Properties/FPropertyTagType.{h,cpp}` |
 | Scalar properties | `UE4/.../Properties/*Property.cs` | `UE4/Assets/Objects/Properties/*Property.h` (13 scalar types) |
 | Struct value / fallback | `UE4/Assets/Objects/FScriptStruct.cs`, `FStructFallback.cs` | `UE4/Assets/Objects/FScriptStruct.{h,cpp}` (named-struct table for the ported types), `FStructFallback.{h,cpp}` |
-| Config ini parser | *(the `Infrablack.UE4Config` NuGet dependency)* | `UE4Config/Parsing/{ConfigIni.{h,cpp},IniToken.h}` (read path, vendored) |
+| Config ini parser | *(the `Infrablack.UE4Config` NuGet dependency)* | `UE4Config/Parsing/{ConfigIni.{h,cpp},IniToken.h}`, `UE4Config/Evaluation/PropertyEvaluator.{h,cpp}` (read path, vendored) |
 | Array value | `UE4/Assets/Objects/UScriptArray.cs` | `UE4/Assets/Objects/UScriptArray.{h,cpp}` |
 | Map / Set value | `UE4/Assets/Objects/UScript{Map,Set}.cs` | `UE4/Assets/Objects/UScript{Map,Set}.{h,cpp}` |
 | Struct/Array/Enum properties | `UE4/.../Properties/{Struct,Array,Enum}Property.cs` | `UE4/Assets/Objects/Properties/{Struct,Array,Enum}Property.{h,cpp}` |
@@ -243,6 +245,11 @@ foundation** everything else builds on:
 | Provider object loading | `FileProvider/AbstractFileProvider.cs` (`LoadPackageObject`) | `FileProvider/IFileProvider.{h,cpp}` (`LoadPackageObject`/`TryLoadPackageObject<T>`) |
 | Provider stack | `FileProvider/{AbstractFileProvider,DefaultFileProvider}.cs`, `FileProvider/Vfs/{IVfsFileProvider,AbstractVfsFileProvider,FileProviderDictionary}.cs`, `FileProvider/Objects/{VersionedGameFile,OsGameFile}.cs`, `UE4/VirtualFileSystem/AesVfsReaderForProvider.cs` | same paths under `FileProvider/` and `UE4/VirtualFileSystem/` |
 | IO Store container | `UE4/IO/IoStoreReader.cs`, `UE4/IO/Objects/{FIoStoreTocResource,FIoStoreTocHeader,FIoStoreTocCompressedBlockEntry,FIoStoreTocEntryMeta,FIoChunkId,FIoOffsetAndLength,FIoDirectoryIndexEntry,FIoFileIndexEntry,FIoStoreEntry,FIoContainerId,FPackageId,FIoStatus}.cs` | same paths under `UE4/IO/` |
+| Pixel formats | `UE4/Assets/Exports/Texture/PixelFormat.cs` | `UE4/Assets/Exports/Texture/PixelFormat.{h,cpp}` (`EPixelFormat` 97 members, `FPixelFormatInfo` geometry table, `TryParsePixelFormat` standing in for `Enum.TryParse`) |
+| Texture platform data | `UE4/Assets/Exports/Texture/{FTexturePlatformData,FTexture2DMipMap,FVirtualTextureBuiltData,FVirtualTextureDataChunk}.cs` | same paths under `UE4/Assets/Exports/Texture/` |
+| Texture export tree (25) | `UE4/Assets/Exports/Texture/{UTexture,UTexture2D,UTextureCube,UTexture2DArray,UVolumeTexture,ULightMapTexture2D,UTextureLightProfile,UTextureProFX,UTextureMovie,UTextureRenderTarget*,UPaperSprite,UTexture*MipDataProviderFactory,…}.cs` | same relative paths, `.h`/`.{h,cpp}` |
+| Texture prerequisites | `UE4/Objects/Core/Compression/FCompressedBuffer{,Header}.cs`, `UE4/Assets/Objects/FEditorBulkData.cs`, `UE4/Objects/Engine/UAssetUserData.cs`, `UE4/Assets/Exports/Component/IAssetUserData.cs`, `UE4/Assets/Exports/Material/{CMaterialParams,UUnrealMaterial}.cs` | same relative paths, `.h` |
+| Everything not yet ported (1,041) | every remaining `CUE4Parse/**/*.cs` | a placeholder `.h` at the same relative path — `#pragma once`, the right namespace, a `TODO: port …` line, first line `// Stub for CUE4Parse/…`. Included by nothing, compiled into nothing; the tree shape matches the C# source so the gap is browsable. |
 
 ## Deliberate differences from C#
 
@@ -372,7 +379,16 @@ These are noted inline in the headers where they occur:
   line-ending detection and `FindPropertyInstructions`. Its behaviour was verified token-by-token against the
   real 0.7.2.97 assembly, and `test_config_ini` encodes that as ground truth (down to `#` *not* being a
   comment marker, `!Key=Val` taking the whole remainder as its key, and an indented `+Key=1` demoting to a
-  plain `Set`). On top of it: `CustomConfigIni DefaultGame`/`DefaultEngine`, `LoadIniConfigs` (which also
+  plain `Set`).
+  - **One piece of the Evaluation layer is vendored too**, because both audio providers read their settings
+    through it: `PropertyEvaluator` reduces a property's instructions to the values in effect. The five
+    kinds are not symmetrical and the differences matter — `Set` replaces the whole list, `Add` (`+`) appends
+    only when the value is *not already present*, `AddForce` (`.`) appends unconditionally, `Remove` (`-`)
+    erases **every** occurrence rather than the first, and `RemoveAll` (`!`) clears the list and ignores
+    whatever value follows it. All comparisons are ordinal, so `+Key=A` does not collide with an existing
+    `a`. Each of those was confirmed by calling `PropertyEvaluator.Default.ExecutePropertyInstructions` on
+    the real assembly with constructed tokens, and `test_config_ini` pins every one.
+  On top of it: `CustomConfigIni DefaultGame`/`DefaultEngine`, `LoadIniConfigs` (which also
   seeds `InternationalizationDictionary::InitFromIni` and `DefaultLightUnit`), `GameDisplayName`
   (NSLOCTEXT/INVTEXT unwrapping with the `ProjectName` fallback) and `AbstractVfsFileProvider::PostMount`,
   which unmounts the archives whose AES key turned out to be wrong. One arm is deferred: a display name that
@@ -577,6 +593,30 @@ These are noted inline in the headers where they occur:
   C#'s `UScriptClass.ConstructObject` ultimately looks up — so a `StringTable` export deserializes into a
   `UStringTable` (its `FStringTable`: namespace + key→string entries, plus the metadata map) and a `DataTable`
   into a `UDataTable` instead of a bare `UObject`. Unregistered classes still fall through to base `UObject`.
+  - **The name is the whole risk.** C# derives the registered name *from the type* (`RegisterClass(Type)` strips
+    a leading `U`/`A`), so name and type can never disagree. Here they are an independently written string and
+    type; a typo compiles fine and silently costs every typed field. A `Register<T>(name)` helper keeps the pair
+    on one line, and `tests/test_object_type_registry.cpp` builds every registered name and asserts
+    `typeid(*obj) == typeid(T)` — exact type, not a base, since most of these differ from their base only in
+    which fields exist.
+  - **77 types are registered**, the 13 engine ones plus all 64 concrete audio types: `Sound` (7 —
+    `USoundBase` is `abstract` in C#, so reflection skips it and so do we), `Sound/Node` (20), `MetaSound` (2),
+    `Wwise` (28, including the per-game renames `UWuiBank`/`UWwiseBank` and `UWuiEvent`/`UWwiseEvent`, whose
+    only reason to exist is a different serialized class name) and `FMod` (7). The one deliberate oddity:
+    `Exports/Sound/UMetaSoundSource.cs` declares its class as **`UMetaUSoundSource`** — a typo in the C# that
+    reflection turns into the registered name `MetaUSoundSource`, which no cooked asset uses. The real
+    MetaSound source is a *different* type registered as `MetaSoundSource`. Both are kept verbatim; "fixing"
+    the name would silently change which type a package constructs.
+  - **What this buys on real data.** Satisfactory (UE 5.6): 2,668 more exports construct as typed objects —
+    2,502 `UAkAudioEvent`, plus `UAkStateValue`/`UAkRtpc`/`UAkSwitchValue`/`UAkAcousticTexture`/`UAkAuxBus`/
+    `UAkInitBank` — 24,494 of 110,664 (22.1%) typed overall. Poppy Playtime Chapter 5 (UE 5.6, with readable
+    mappings): 3,598 typed audio exports, and **all 3,000 `USoundWave`s read a valid `CompressedDataGuid` and
+    a non-empty `FStreamedAudioPlatformData`** (`BINKA`, a 28-byte header chunk + the payload chunk), while the
+    566 `UMetaSoundSource`s carry no wave payload — `SoundBaseDeserialize` opting out, exactly as in C#.
+  - **Registration is necessary but not sufficient.** A typed `Deserialize` only reaches its own fields after
+    the tagged-property read succeeds, and for a UE5 Zen package that needs mappings. With Satisfactory's
+    unreadable `.usmap`, all 110,664 exports read **zero** properties and every registered type stays at its
+    defaults. The largest single unregistered class name in that game is `Texture2D` (6,127 exports).
 - **`UDataTable`** (`UE4/Assets/Exports/Engine/UDataTable.{h,cpp}`) recovers its `RowStructName` from the tagged
   `RowStruct` `ObjectProperty`, then reads its `RowMap` (row name → `FStructFallback`, an insertion-ordered
   `vector<pair<FName, FStructFallback>>`). C# loads the row `UStruct` to drive parsing; that's deferred, so the
@@ -801,8 +841,8 @@ These are noted inline in the headers where they occur:
     filled out of order by an embedded index, `DSPLfoWaveform`'s intentional CA1069 duplicate, the
     `-42.0f` sentinel gating `CMBCRuntimeParams`' mode, `AkFolder`'s UTF-16 name (C#'s `char` is two bytes),
     and `CREVSourceModelPlayerParams`' hand-rolled big-endian float read.
-  - `WwiseReader`, `WwiseProvider` and `Objects/AkEntry` are **deliberately excluded**: they need the
-    `FDeferredByteData` family, which is unported. They are the next slice, not a stub.
+  - `WwiseReader`, `WwiseProvider` and `Objects/AkEntry` came in later slices, once the `FDeferredByteData`
+    family they need existed. `UE4/Wwise` is now complete.
 - **The bulk-data / payload layer is ported, and with it the Wwise container reader.** `TBulkData<T>` +
   `FByteBulkData` read a payload that lives out of line from the export that owns it; `FByteBulkDataHeader`
   resolves where that is, three different ways (an index into a UE5 `IoPackage`'s `BulkDataMap`, an index
@@ -833,9 +873,7 @@ These are noted inline in the headers where they occur:
   - `Package` now reads its `DataResourceMap` (the header resolves through it) and both package types
     attach their `ubulk`/`uptnl` payload providers, which `AbstractFileProvider` builds from the sidecar
     `GameFile`s it already located.
-  - **`WwiseProvider` is deliberately excluded**, the one file left in `UE4/Wwise`: it drives extraction
-    across loaded packages and needs `AbstractVfsFileProvider::ProjectName` plus the object-loading path
-    behind `ObjectProperty`, neither of which is ported. `TODO`.
+  - `WwiseProvider` is now ported too — see its own bullet below.
 - **The Sound + MetaSound export trees are ported — 46 files across `UE4/Assets/Exports/Sound` (22) and
   `UE4/Assets/Exports/MetaSound` (24).** `USoundWave` and its `USoundBase`/`USoundWaveProcedural`/
   `USoundSourceBus` line, `USoundCue` + the 20-odd `USoundNode*` graph classes, `USoundClass`, `UDialogueWave`,
@@ -857,9 +895,9 @@ These are noted inline in the headers where they occur:
   - **`PropertyUtil` gained a `SetProperty` arm** (`const UScriptSet*`) so Wwise's `FWwiseSwitchContainerLeafCookedData`
     — which keeps its `GroupValueSet` raw — resolves; it had never been forced to instantiate before this slice.
   - `test_sound_metasound` pins the hierarchy, the `[Flags]` helpers, the empty-bag defaults through every new
-    `PropertyUtil` arm, and both quirks above. The concrete types are **not yet registered** in `ObjectTypeRegistry`
-    (they load as generic `UObject` until then, as C# would resolve them by class). `TODO`.
-- **The FMOD bank tree is ported — 105 files, everything under `UE4/FMod` bar `FModProvider`.** `FModReader`
+    `PropertyUtil` arm, and both quirks above. All 64 concrete types are **now registered** in
+    `ObjectTypeRegistry` — see the registry bullet above for the naming rules and what real games exercise.
+- **The FMOD bank tree is ported — 105 files under `UE4/FMod` (plus `FModProvider`, below).** `FModReader`
   walks a `.bank` (a RIFF file of form type `"FEV "`) as a flat stream of (4-byte tag, 4-byte size, payload)
   chunks, dispatching each `ERIFFID` to its node reader: the event/timeline/parameter/parameter-layout nodes,
   the bus family (master/group/input/return/output-port), the effect family (built-in/plugin/send/sidechain/
@@ -898,8 +936,17 @@ These are noted inline in the headers where they occur:
     `bank.Samples.Count`. `Fsb5Decryption` (bit-reverse then XOR with a repeating key) **is** ported: C#
     applies it lazily per read using the absolute stream position, and because the port reads the whole FSB
     region into a buffer starting at position 0 the buffer index equals that position, so one whole-buffer
-    transform is equivalent. `FModProvider` is the one file left in `UE4/FMod`: it needs both the missing
-    decoder's `RebuildAsStandardFileFormat` and `IFileProvider` config-ini wiring. `TODO`.
+    transform is equivalent. `FWaveformRef` now lives in its own header (`UE4/FMod/Utils/FWaveformRef.h`)
+    because `FModReader` and `EventNodesResolver` both name it and the latter includes the former.
+  - **Eager vs. lazy reads are not interchangeable, and one place proves it.** C#'s `SoundDataNode` takes a
+    `Substream(fsbOffset, size)` — a *lazy* view that is allowed to name more bytes than the underlying
+    stream has, because `FsbLoader` only ever reads the front of the FSB5 and the tail is never touched.
+    That is not an edge case: an `SND` chunk's declared size is measured from the chunk **body**, while the
+    FSB5 starts `relativeOffset` bytes further in (the `SNDH` header carries the absolute offset), so on a
+    real bank the last `SND` chunk *always* overruns the file by exactly that much. The port read eagerly
+    and threw `"Read size is bigger than remaining archive length"` on **every shipped bank tested**; the
+    read is now clamped to what is actually there. Verified against a retail Subliminal install: all 7 banks
+    went from 0 events parsed to 867. Pinned by `TestSoundDataOverhang` in `tests/test_fmod_bank.cpp`.
   - **`FPackedNode.cs` is folded into `FRadixTreePacked.h`** (C# splits the class across two files with
     `partial`); `FModSoundBank.h` is the one file with no C# counterpart, standing in for the Fmod5Sharp types.
   - Faithful quirks kept with comments rather than "fixed": `TransitionRegionNode` reproduces C#'s
@@ -907,6 +954,63 @@ These are noted inline in the headers where they occur:
     `ParseNodes` keeps the shift-back-by-3 recovery for a chunk that starts on a stray null terminator, and
     the `visitedSoundNode` early break for banks that write duplicated FSB data outside an `SND` chunk;
     `FBankInfo::FileVersion` is assigned from `FModReader::Version()` rather than read from the chunk.
+- **Both audio providers are ported — `WwiseProvider` and `FModProvider`, the last two files in their
+  trees.** These are the layer above the two bank readers: not "parse one container" but "find every
+  container a game ships, join them into one index, and answer *which sounds does this export play?*".
+  - **Wwise resolves an event two completely different ways, and which one runs depends on how the game was
+    cooked.** A modern `UAkAudioEvent` carries an `FWwiseLocalizedEventCookedData` that names its media and
+    banks outright, so the answer is read straight off the export. An older one carries only a `ShortID` — or
+    nothing at all, in which case the id is the **FNV-1 hash of the export's own name** — and the answer has
+    to be *found*, by walking the flat id→node table built from every bank's HIRC section: event → actions →
+    switch/random/layer/music containers → decision trees → leaf sources. Both paths are ported, including
+    the switch-state stack that `SetSwitch` actions push and pop around an event's action list, and the
+    commented-out actor-mixer arm ("skip mixers cause it resolves too many sounds from other events").
+  - **That second path is why this works without mappings.** The hierarchy route reads the export's *name*,
+    which comes from the package's export map, not from tagged properties — so it resolves even on a game
+    whose `.usmap` is unreadable, where every typed field sits at its default. It is the one substantial
+    reader in the tree that does not depend on the mappings problem.
+  - **Ownership is the real difference from C#.** C# holds GC references to the `WwiseReader`s it parses and
+    to the `Hierarchy` objects inside them. Here the provider owns every reader it creates (`_ownedReaders`)
+    and the hierarchy tables hold *non-owning* pointers into them; readers that come from an asset library
+    belong to the package the provider cached, which outlives it either way. Media stay
+    `shared_ptr<FDeferredByteData>`, so a `WwiseExtractedSound` is still just a name plus a promise of bytes —
+    nothing is decoded, and the `.wem` is read out of the pak only when someone asks for it.
+  - C#'s local functions (`TraverseAndSave`, `SaveWemSound`, `TraverseSwitchContainer`,
+    `TraverseDecisionTreeNode`) become private members plus an `EventWalk` struct carrying what those
+    closures captured — a C++ lambda cannot recurse without that. `switch (hierarchy.Data)` over C# type
+    patterns becomes an ordered `dynamic_cast` chain; the ordering is load-bearing only where two container
+    types share a base.
+  - **Faithful quirks kept**: `ExtractAudioEventSounds`' last two loops iterate a bank list while ignoring
+    the loop variable, so an event with *N* sound banks re-resolves the same event *N* times; `SaveWemSound`
+    uses the non-short-circuiting `|` so both lookups always run; `ProcessMediaCookedData` still appends the
+    entry when it could not find any bytes for it. One thing genuinely cannot work yet: `RequiredBank` is
+    normally an **import**, and this port's `ResolvedImportObject::Object()` still returns null, so that
+    branch falls through to the FNV hash — which is exactly what a failed `TryLoad` does in C#.
+  - **`FModProvider` merges twice, and both merges matter.** FMOD splits one logical bank across several
+    files — metadata in `Foo.bank`, audio in `Foo.assets.bank`, localised audio in `Foo.<lang>.bank` — so it
+    groups by the name up to the first `.`, merges each group into one reader, then merges *again* by bank
+    GUID so a pak copy and an on-disk copy land together. Both discovery routes are ported: banks inside the
+    paks (any path containing `FMOD`) and banks loose on disk under `<game>/Content/FMOD/Desktop`, whose
+    location can be overridden by `BankOutputDirectory` in `DefaultEngine.ini`. The `StudioBankKey` from that
+    same ini is read through a port of `Regex.Unescape` and feeds `Fsb5Decryption`.
+  - Where C# hands back decoded bytes and a file extension from `RebuildAsStandardFileFormat`, a
+    `FModExtractedSound` carries the sample's *identity* instead — its `FWaveformRef` plus the
+    `FModSoundBank` holding the raw FSB5 container. `ExtractAudioSamples` still filters, just one step
+    earlier: where C# drops a sample whose rebuild failed, the port drops a reference whose subsound index
+    is past the container's sample count. Names are always the `{fallback}_{i}` form, since the real ones
+    live in the FSB5 name table only the decoder reads.
+  - C# takes an `IFileProvider`, whose interface declares the `Files` dictionary, the config inis and
+    `TrySaveAsset`; this port's `IFileProvider` is far slimmer and those live on `AbstractFileProvider`, so
+    that is what `FModProvider` takes — which is what every real caller passes anyway.
+  - **What real games say.** Satisfactory (2,497 `.bnk`, 6,258 loose `.wem`): **2,470 of 2,502
+    `UAkAudioEvent` exports resolve to at least one `.wem`, 11,370 media references**, and sampled reads pull
+    32 KB–231 KB of real bytes back out of the pak. Notably that game's `.usmap` is unreadable, so *no*
+    tagged property anywhere resolves — the Wwise hierarchy route still works because the event id falls back
+    to the FNV hash of the export's name, which comes from the export map. Subliminal (UE 5.7, FMOD): all 7
+    shipped banks parse to 867 events / 2,107 waveform resources / 6 FSB5 containers, and **776 of 786
+    `UFMODEvent` exports resolve to at least one sample**. Both are covered hermetically by
+    `tests/test_audio_providers.cpp`, which authors a real v145 `.bnk` and a v0x83 `"FEV "` bank into a pak
+    and walks the whole path — bulk init, hierarchy index, event traversal, deferred byte read.
 - **Not yet ported** (arrive with their layers): the
   dependency-graph `ExportLoader` (non-lazy) loading path, `.locres`
   localization loading (`FTextLocalizationResource`), the full `UStruct`/`UClass`-aware `ConstructObject`
@@ -917,6 +1021,42 @@ These are noted inline in the headers where they occur:
   `UFunction`, `UObjectRedirector`, `UBlueprintGeneratedClass`, `UUserDefinedStruct`, `UUserDefinedEnum`,
   `UCurveFloat`/`UCurveVector`/`UCurveLinearColor` so far; `UStruct`/`UClass`/`UCurveBase` ported but unregistered).
   Marked with `TODO` at their sites.
+
+### Texture tree
+
+- **`TBulkData` spells out all five special members.** Its `virtual ~TBulkData() = default` would otherwise
+  suppress the implicit move operations, silently turning every `bulk = TBulkData(Ar)` into a copy. Every
+  member is a value type, so the defaults are the right semantics.
+- **`Enum.TryParse<EPixelFormat>` becomes `PixelFormatUtils::TryParsePixelFormat`**, backed by a generated
+  case-insensitive name table covering all 97 members (numeric strings accepted too, as in C#). The table has
+  to stay complete: a missing name makes a cooked texture read `PF_Unknown` and mis-size its mips.
+- **`FTexture2DMipMap::BulkData` is a `unique_ptr`**, not a value, because `EnsureValidBulkData` may replace
+  an `FByteBulkData` with an `FByteArrayData`. That method currently returns `false` — the landscape path it
+  needs (`ULandscapeTextureStorageProviderFactory`) is not ported.
+- **`UTexture::LightingGuid` defaults to a plain `FGuid`.** C# uses `new FGuid((uint)GetFullName().GetHashCode())`,
+  which is not reproducible here on two counts: `GetFullName` is unported, and .NET Core randomises
+  `string.GetHashCode` per process, so the C# value is not even stable across runs.
+- **`FEditorBulkData`'s `StoredInPackageTrailer` branch returns an empty payload.** `Package::Trailer` is
+  unported, which is the same answer C# gives for a package with no trailer.
+- **`CMaterialParams2` is forward-declared only** in `UUnrealMaterial.h`. A pure-virtual reference parameter
+  needs no complete type, and both of `UTexture`'s `GetParams` overrides are empty in the C# as well; the
+  real 353-line table belongs to the material slice.
+- **`FVirtualTextureBuiltData` gained a defaulted default constructor.** C# only has the reading one and
+  models "not read" as a null reference; the default-constructed object is exactly that state
+  (`!IsInitialized()`).
+- **`FVirtualTextureBuiltData::IsLegacyData()` drops half of C#'s test.** C# asks
+  `TileOffsetInChunk == null || TileOffsetInChunk.Length > 0`; there is no null vector here, and the only
+  path that leaves the field unread is a branch C# has commented out, so an empty vector means the legacy
+  arrays *were* read and were empty — the same answer C# gives for a zero-length array.
+- **Fully-qualified `CUE4Parse::Utils::…` and `CUE4Parse::UE4::Readers::…` inside the texture namespace.**
+  Unqualified, `Utils::` binds to `CUE4Parse::UE4::Assets::Utils` and `Readers::` to `Assets::Readers`.
+
+### Unported files
+
+Every C# file without a port has a placeholder header at its mirrored path (`// Stub for CUE4Parse/…`,
+`#pragma once`, the namespace, a `TODO`). They declare nothing, nothing includes them, and the CMake `*.cpp`
+glob never sees them. **File existence therefore says nothing about porting status** — check whether the
+first line begins `// Stub for`.
 
 ## Build
 

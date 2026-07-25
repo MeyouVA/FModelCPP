@@ -26,7 +26,19 @@ namespace CUE4Parse::UE4::FMod::Nodes
             uint32_t fsbOffset = FModReader::SoundDataInfo->Header[soundDataIndex].FSBOffset;
 
             Ar.Position = fsbOffset;
-            std::vector<uint8_t> data = Ar.ReadBytes(static_cast<int>(size));
+            // C# takes a *lazy* `Substream(fsbOffset, size)` here. A Substream may name more bytes than the
+            // underlying stream actually has -- FsbLoader only ever reads the front of the FSB5, so the
+            // overhang is never touched and nothing complains. This port reads eagerly, so the length has to
+            // be clamped to what is really there. It is not a rare edge case: the SND chunk's declared size
+            // is measured from the chunk body, but the FSB5 starts `relativeOffset` bytes further in, so the
+            // last (usually only) SND chunk of a real bank always runs exactly that far past the end of the
+            // file. Without the clamp every shipped bank dies with "Read size is bigger than remaining
+            // archive length".
+            const int64_t available = Ar.Length - static_cast<int64_t>(fsbOffset);
+            const int64_t wanted = static_cast<int64_t>(size);
+            std::vector<uint8_t> data = available <= 0
+                ? std::vector<uint8_t>()
+                : Ar.ReadBytes(static_cast<int>(wanted < available ? wanted : available));
 
             // In case FSB5 is encrypted: bit-reverse + XOR with the key, then re-check the header.
             if (!Fsb5Decryption::IsFSB5Header(data))

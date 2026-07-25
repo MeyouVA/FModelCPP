@@ -28,6 +28,7 @@
 
 #include "../Readers/FArchive.h"
 #include "FModSoundBank.h"
+#include "Utils/FWaveformRef.h"
 #include "Objects/FUInt24.h"
 #include "Objects/FModGuid.h"
 #include "Metadata/FFormatInfo.h"
@@ -94,6 +95,19 @@ namespace CUE4Parse::UE4::FMod
 
         Objects::FModGuid GetBankGuid() const;
         void Merge(FModReader& src);
+
+        // ---- track extraction ------------------------------------------------------------------------
+        // C# returns List<FmodSample> from all three; here they return the (bank, subsound) references that
+        // stand in for a decoded sample -- see Utils/FWaveformRef.h. The bounds check C# gets for free from
+        // bank.Samples.Count is done against FModSoundBank::SampleCount instead.
+
+        // FMOD::RuntimeAPI::Manager::getSoundInfo
+        // Key parameter is an internal string identifier for the sound, not the actual sound name
+        // Therefore this has no real use for us since we have no way of obtaining these keys
+        bool TryGetSoundSampleFromSoundTable(const std::string& key, Utils::FWaveformRef& sample) const;
+
+        std::vector<Utils::FWaveformRef> ExtractTracks() const;
+        std::vector<Utils::FWaveformRef> ExtractSoundTableTracks() const;
 
         // ---- Global Readers (C# #region Global Readers) --------------------------------------------
 

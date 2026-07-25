@@ -65,6 +65,14 @@ namespace CUE4Parse::UE4::Assets::Objects
 
         virtual ~TBulkData() = default;
 
+        // Rule of five, all defaulted. The virtual destructor alone would suppress the implicit move
+        // operations, leaving every `bulk = TBulkData(Ar)` to fall back on a copy; spelling all four out
+        // keeps both available. Every member is a value type, so the defaults are the correct semantics.
+        TBulkData(const TBulkData&) = default;
+        TBulkData& operator=(const TBulkData&) = default;
+        TBulkData(TBulkData&&) = default;
+        TBulkData& operator=(TBulkData&&) = default;
+
         // C#'s Data property: reads on first touch, then hands back the cache. Null means the read failed.
         const std::vector<T>* Data() const
         {

@@ -1,6 +1,8 @@
 // Ported from the UE4Config.Parsing namespace of the Infrablack.UE4Config NuGet package (read path only).
 #include "ConfigIni.h"
 
+#include "../Evaluation/PropertyEvaluator.h"
+
 namespace UE4Config::Parsing
 {
     namespace
@@ -165,6 +167,14 @@ namespace UE4Config::Parsing
             if (section->Name == sectionName)
                 section->FindPropertyInstructions(propertyName, outInstructions);
         }
+    }
+
+    void ConfigIni::EvaluatePropertyValues(const std::string& sectionName, const std::string& propertyName,
+                                           std::vector<std::string>& values,
+                                           Evaluation::PropertyEvaluator* evaluator) const
+    {
+        Evaluation::PropertyEvaluator::CustomOrDefault(evaluator)
+            .EvaluatePropertyValues(*this, sectionName, propertyName, values);
     }
 
     const ConfigIniSection* ConfigIni::FindSection(const std::string& sectionName) const
