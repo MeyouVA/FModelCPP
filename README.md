@@ -1051,6 +1051,25 @@ These are noted inline in the headers where they occur:
 - **Fully-qualified `CUE4Parse::Utils::…` and `CUE4Parse::UE4::Readers::…` inside the texture namespace.**
   Unqualified, `Utils::` binds to `CUE4Parse::UE4::Assets::Utils` and `Readers::` to `Assets::Readers`.
 
+### Zstd
+
+The Zstd codec is the reference **native libzstd, loaded at runtime** by `ZstdHelper::Initialize` — the same
+shape as `OodleHelper`, and unlike Zlib/Gzip/LZ4, which are implemented in-tree. C# reaches for the managed
+`ZstdSharp` package here; a hand-written decoder was tried and dropped, because a subtly wrong entropy table
+decodes megabytes correctly before drifting, which is a bad trade against a dependency that is already a
+runtime `.dll`. Nothing Zstd-shaped decodes until `Initialize` succeeds, and `tests/test_zstd.cpp` reports
+SKIPPED rather than failing on a machine without the library.
+
+### Native libraries
+
+Oodle, Zstd and Brotli are runtime `.dll`/`.so` loads, resolved by `CUE4Parse/Compression/NativeLibrary.{h,cpp}` in
+this order: an explicit path → `$FMODELCPP_NATIVE_DIR` → the executable's own directory → the in-tree
+`ThirdParty/native/<platform>` folder (walking up from the build tree) → the bare name, left to the OS
+loader. **No absolute path is compiled in**, and CMake copies whatever sits in `ThirdParty/native/<platform>`
+next to the built binaries. C# has no equivalent — .NET's probing rules cover it there, and FModel downloads
+Oodle and Zlib-ng at runtime into its own data directory. Brotli has no C# helper file at all to mirror
+(`System.IO.Compression.BrotliStream` is in the BCL), so `BrotliHelper` is an addition, not a port. See [ThirdParty/README.md](ThirdParty/README.md).
+
 ### Unported files
 
 Every C# file without a port has a placeholder header at its mirrored path (`// Stub for CUE4Parse/…`,

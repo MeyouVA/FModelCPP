@@ -13,7 +13,7 @@ differences from the C# source.
 
 | Track | Progress | Size | Notes |
 | --- | --- | --- | --- |
-| **CUE4Parse** — parsing core | `██████████████░░░░░░` **~72%** | 906 real C++ files (+1,041 stubs) · 52 test suites | Measured against the *reading path* |
+| **CUE4Parse** — parsing core | `██████████████░░░░░░` **~72%** | 909 real C++ files (+1,041 stubs) · 51 test suites | Measured against the *reading path* |
 | **FModel** — desktop app | `██▌░░░░░░░░░░░░░░░░░` **~13%** | 45 C++ files · 3 test suites · Qt 6.8 Widgets | |
 
 **CUE4Parse.** The bottom-up reading spine is complete through the tagged-property system, and both package
@@ -47,6 +47,13 @@ parses 15 and rejects 3, matching an independent reference parser on every file 
 are unreadable and at which byte. Those three are written by dumpers whose format CUE4Parse does not
 implement (one carries 784 KB of trailing data), so the port deliberately fails them exactly as the C# does
 rather than guessing.
+
+With a native libzstd loaded, the mappings path was re-run over a fresh set of 21 real `.usmap` files
+(`G:\TempBEProcess`, plus dumper output and a Zstd-compressed Fortnite mapping): **all 21 parse**, including
+usmap compression methods None and ZStandard — the Fortnite `_zs` file alone yields 38,066 types and 5,589
+enums. With all three native codec libraries present — Zstd, Oodle and Brotli, dropped into
+`ThirdParty/native/win-x64` — **31 of 32 real `.usmap` files parse**, covering every usmap compression
+method (None, Oodle, Brotli, ZStandard) and up to 42,498 types each. The single failure is a zero-byte file.
 
 A second retail install — **Poppy Playtime Chapter 5 (UE 5.6)**, 6 containers, 27,669 files — covers what
 Satisfactory cannot: it has a `.usmap` the port *can* read, so unversioned properties actually resolve.
@@ -92,8 +99,9 @@ unencrypted UE package end-to-end; what remains is real-container access and the
 - ✅ **Readers layer** — `FArchive`, byte / pointer / stream / big-endian / random-access + compressed proxy
 - ✅ **Versions** — `EGame`, `ObjectVersion`, `FPackageFileVersion`, `VersionContainer` (incl. the per-game
   Options / MapStructTypes tables), `VersionUtils` + the whole `F*{Object,Custom}Version` family
-- ✅ **Compression codecs** — Zlib/Gzip/LZ4 built-in (from-scratch DEFLATE + LZ4 block); Oodle/Zstd via
-  runtime native-library load
+- ✅ **Compression codecs** — Zlib/Gzip/LZ4 built-in (from-scratch DEFLATE + LZ4 block); Oodle/Zstd/Brotli
+  via runtime native-library load, resolved with no absolute path compiled in. Zstd is verified against reference-produced frames and a real
+  Zstd-compressed Fortnite `.usmap` (38,066 types); see the note under *Deliberate differences*
 - ✅ **Core/Misc value structs** — `FGuid`, `FDateTime`, `FEngineVersion`, `FSHAHash` …
 - ✅ **Core/Math — colors, vectors, geometry, bounds** — `FColor`, `FLinearColor`, all vector types,
   `FQuat`/`FRotator`/`FMatrix`/`FTransform`/`FPlane`, and `FBox`/`FBoxSphereBounds`/`FSphere`/`TRange` —
@@ -243,10 +251,9 @@ Each is a self-contained, testable unit — in the standing bottom-up order. One
 
 | # | Track | Slice | Why |
 | --- | --- | --- | --- |
-| 1 | core | **A Zstandard decompressor** | Small, and it unblocks something disproportionate: most modern `.usmap` files are Zstd-compressed, and without mappings a UE5 Zen package reads *no properties at all*. Today only pre-decompressed mappings work. |
-| 2 | core | **`LoadVirtualPaths` + plugin manifests** | The last unported piece of `AbstractFileProvider`: `.upluginmanifest`/`.uplugin` JSON, which is what makes `FixPath`'s virtual-root branch do anything for plugin content. |
-| 3 | app | **The command layer** | `MenuCommand` / `CopyCommand` / `RightClickMenuCommand` on top of the ported `ViewModelCommand<T>` base — replaces `MainWindow`'s `onMenuCommand` stand-in, and is what the now-live `ApplicationViewModel` was missing. |
-| 4 | app | **Settings dialog** | `SettingsViewModel` + the view, binding the settings tree that just landed — the first place the ported `description()` overloads earn their keep. |
+| 1 | core | **`LoadVirtualPaths` + plugin manifests** | The last unported piece of `AbstractFileProvider`: `.upluginmanifest`/`.uplugin` JSON, which is what makes `FixPath`'s virtual-root branch do anything for plugin content. |
+| 2 | app | **The command layer** | `MenuCommand` / `CopyCommand` / `RightClickMenuCommand` on top of the ported `ViewModelCommand<T>` base — replaces `MainWindow`'s `onMenuCommand` stand-in, and is what the now-live `ApplicationViewModel` was missing. |
+| 3 | app | **Settings dialog** | `SettingsViewModel` + the view, binding the settings tree that just landed — the first place the ported `description()` overloads earn their keep. |
 
 ### Retired: "IO Store uncompressed-block reads"
 
