@@ -53,7 +53,9 @@ namespace CUE4Parse::UE4::Assets
         FObjectImport* _import;
     };
 
-    Package::Package(FArchive& uasset, FArchive* uexp, CUE4Parse::FileProvider::IFileProvider* provider)
+    Package::Package(FArchive& uasset, FArchive* uexp,
+                     FAssetArchive::RawPayloadProvider ubulk, FAssetArchive::RawPayloadProvider uptnl,
+                     CUE4Parse::FileProvider::IFileProvider* provider)
         : _provider(provider)
     {
         _name = uasset.Name();
@@ -94,12 +96,36 @@ namespace CUE4Parse::UE4::Assets
 
         ExportsLazy.resize(static_cast<size_t>(Summary.ExportCount));
 
+        // The UE5 bulk-data table. FByteBulkDataHeader reads an index into this instead of an inline header
+        // whenever it is non-empty, so it has to be read before any export is deserialized.
+        if (Summary.DataResourceOffset > 0)
+        {
+            uassetAr.SeekAbsolute(Summary.DataResourceOffset, ESeekOrigin::Begin);
+            const auto dataResourceVersion =
+                static_cast<CUE4Parse::UE4::Objects::UObject::EObjectDataResourceVersion>(uassetAr.Read<uint32_t>());
+            if (dataResourceVersion > CUE4Parse::UE4::Objects::UObject::EObjectDataResourceVersion::Invalid &&
+                dataResourceVersion <= CUE4Parse::UE4::Objects::UObject::EObjectDataResourceVersion::Latest)
+            {
+                const int count = uassetAr.Read<int32_t>();
+                DataResourceMap.reserve(static_cast<size_t>(count));
+                for (int i = 0; i < count; i++)
+                    DataResourceMap.emplace_back(uassetAr, dataResourceVersion);
+            }
+        }
+
         // The archive to (re-)read export data from on demand. With a separate .uexp its serial offsets are
         // package-global, so AbsoluteOffset = uasset length translates them; without one the data is in the
         // uasset (AbsoluteOffset 0). We keep a clonable copy — each load clones it so it can seek freely.
         _exportAr = std::make_unique<FAssetArchive>(
             uexp != nullptr ? *uexp : uasset, this,
             uexp != nullptr ? static_cast<int>(uassetAr.Length) : 0);
+
+        // Attach ubulk and uptnl. C# hangs these off the *export* archive, which is the one every
+        // FByteBulkDataHeader is read through.
+        if (ubulk != nullptr)
+            _exportAr->AddPayload(Utils::PayloadType::UBULK, Summary.BulkDataStartOffset, std::move(ubulk));
+        if (uptnl != nullptr)
+            _exportAr->AddPayload(Utils::PayloadType::UPTNL, Summary.BulkDataStartOffset, std::move(uptnl));
     }
 
     std::unique_ptr<Exports::UObject> Package::ConstructObject(ResolvedObject* struc, Exports::EObjectFlags /*flags*/)

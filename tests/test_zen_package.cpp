@@ -465,16 +465,100 @@ static std::vector<uint8_t> MakeZenPackage()
     return w.Bytes;
 }
 
+// The same package as a VERSE_CELLS-era (UE5.6) Zen package. Two things differ from the UE5.0 shape above,
+// and they are what this fixture exists to pin:
+//   * the summary carries three dependency-bundle offsets instead of GraphDataOffset (>= UE5.3), and
+//   * an 8-byte FZenPackageCellOffsets block sits between the summary and the name batch, read only when
+//     Ar.Ver >= VERSE_CELLS. Those 8 bytes are what a version-misdeclared parse desynchronises on: the name
+//     batch is then read out of the cell offsets, whose values become an absurd name count, and the parse
+//     dies with "Read size is bigger than remaining archive length" far from the actual cause. Real UE5.6
+//     packages store both cell offsets equal to ExportBundleEntriesOffset when a package has no Verse
+//     cells — exactly what the pre-VERSE_CELLS branch synthesises — so this fixture does the same.
+// From UE5.3 on no export-bundle headers are read; an export's data sits at HeaderSize + CookedSerialOffset.
+static std::vector<uint8_t> MakeZenPackageVerseCells()
+{
+    Writer names;
+    names.NameBatch({kPackageName, kExportName});
+
+    constexpr int summarySize = 52 + 8;  // 13 uint32 fields (UE5.3+ layout) + FZenPackageCellOffsets
+    constexpr int bulkDataBlock = 16;    // the UE5.4+ pad uint64 (0) + the bulk-data map size int64 (0)
+    const int importedHashesOffset = summarySize + static_cast<int>(names.Pos()) + bulkDataBlock;
+    const int importMapOffset = importedHashesOffset;              // no imported public export hashes
+    const int exportMapOffset = importMapOffset;                   // no imports
+    const int exportBundleEntriesOffset = exportMapOffset + 72;    // one FExportMapEntry
+    // Nothing on this path reads the dependency bundles, so both offsets just close out the header.
+    const int dependencyBundleHeadersOffset = exportBundleEntriesOffset + 2 * 8;
+    const int dependencyBundleEntriesOffset = dependencyBundleHeadersOffset;
+    const int headerSize = dependencyBundleEntriesOffset;
+
+    Writer exportData;
+    exportData.Put<uint16_t>(Fragment(0, 3, true, true));
+    exportData.Put<uint8_t>(0x04); // ZeroProp (schema index 2) is stored as zero
+    exportData.Put<int32_t>(42);   // IntProp
+    exportData.Put<float>(1.5f);   // FloatProp
+
+    Writer w;
+    // FZenPackageSummary (UE5.3+)
+    w.Put<uint32_t>(0);          // bHasVersioningInfo
+    w.Put<uint32_t>(headerSize);
+    w.Put<uint32_t>(0);          // Name: package name pool, index 0
+    w.Put<uint32_t>(0);          // Name.ExtraIndex
+    w.Put<uint32_t>(0x00002000); // PackageFlags: PKG_UnversionedProperties
+    w.Put<uint32_t>(headerSize); // CookedHeaderSize
+    w.Put<int32_t>(importedHashesOffset);
+    w.Put<int32_t>(importMapOffset);
+    w.Put<int32_t>(exportMapOffset);
+    w.Put<int32_t>(exportBundleEntriesOffset);
+    w.Put<int32_t>(dependencyBundleHeadersOffset);
+    w.Put<int32_t>(dependencyBundleEntriesOffset);
+    w.Put<int32_t>(headerSize);  // ImportedPackageNamesOffset
+    CHECK(w.Pos() == 52);
+
+    // FZenPackageCellOffsets — no Verse cells, so both point at the export-bundle entries.
+    w.Put<int32_t>(exportBundleEntriesOffset);
+    w.Put<int32_t>(exportBundleEntriesOffset);
+    CHECK(w.Pos() == summarySize);
+
+    w.Raw(names.Bytes);
+
+    // The bulk-data map block (Ver >= DATA_RESOURCES, and the extra pad from UE5.4 on).
+    w.Put<uint64_t>(0); // pad length
+    w.Put<int64_t>(0);  // bulk-data map size
+    CHECK(w.Pos() == exportMapOffset);
+
+    // FExportMapEntry (72 bytes)
+    const int64_t exportStart = w.Pos();
+    w.Put<uint64_t>(0);                                       // CookedSerialOffset
+    w.Put<uint64_t>(static_cast<uint64_t>(exportData.Pos())); // CookedSerialSize
+    w.Put<uint32_t>(1); w.Put<uint32_t>(0);                   // ObjectName: package pool, index 1
+    w.Put<uint64_t>(FPackageObjectIndex::Invalid);            // OuterIndex
+    w.Put<uint64_t>(kScriptClassIndex);                       // ClassIndex -> the global script object
+    w.Put<uint64_t>(FPackageObjectIndex::Invalid);            // SuperIndex
+    w.Put<uint64_t>(FPackageObjectIndex::Invalid);            // TemplateIndex
+    w.Put<uint64_t>(0x1234);                                  // PublicExportHash
+    w.Put<uint32_t>(0);                                       // ObjectFlags
+    w.Put<uint8_t>(0);                                        // FilterFlags
+    w.Zeros(exportStart + 72 - w.Pos());
+    CHECK(w.Pos() == exportBundleEntriesOffset);
+
+    // FExportBundleEntry[ExportCount * 2], read at CellImportMapOffset
+    w.Put<uint32_t>(0); w.Put<uint32_t>(0); // export 0, ExportCommandType_Create
+    w.Put<uint32_t>(0); w.Put<uint32_t>(1); // export 0, ExportCommandType_Serialize
+    CHECK(w.Pos() == headerSize);
+
+    w.Raw(exportData.Bytes);
+    return w.Bytes;
+}
+
 class TestProvider : public AbstractVfsFileProvider
 {
 public:
-    TestProvider()
-        : AbstractVfsFileProvider(VersionContainer(CUE4Parse::UE4::Versions::GAME_UE5_0),
-                                  StringComparer::OrdinalIgnoreCase()) {}
+    explicit TestProvider(CUE4Parse::UE4::Versions::EGame game = CUE4Parse::UE4::Versions::GAME_UE5_0)
+        : AbstractVfsFileProvider(VersionContainer(game), StringComparer::OrdinalIgnoreCase()) {}
     void Initialize() override {}
 };
 
-static void MountFixture(TestProvider& provider)
+static void MountFixture(TestProvider& provider, bool verseCells = false)
 {
     const auto packageId = FPackageId::FromName(kPackageName);
 
@@ -485,7 +569,8 @@ static void MountFixture(TestProvider& provider)
 
     const auto container = BuildContainer(
         kContainerId,
-        {{FIoChunkId(packageId.id, 0, static_cast<uint8_t>(EIoChunkType5::ExportBundleData)), MakeZenPackage()},
+        {{FIoChunkId(packageId.id, 0, static_cast<uint8_t>(EIoChunkType5::ExportBundleData)),
+          verseCells ? MakeZenPackageVerseCells() : MakeZenPackage()},
          {FIoChunkId(kContainerId, 0, static_cast<uint8_t>(EIoChunkType5::ContainerHeader)),
           MakeContainerHeaderChunk(packageId)}},
         "TestPackage.uasset");
@@ -626,6 +711,60 @@ static void TestMissingGlobalDataIsAnError()
     CHECK(provider.TryLoadPackage("Game/TestPackage.uasset") == nullptr);
 }
 
+// The VERSE_CELLS gate, both ways. This is worth pinning because getting it wrong does not look like a
+// layout error: the same bytes read at a pre-VERSE_CELLS version desynchronise by 8 and blow up inside the
+// name batch with an out-of-range read, which reads as a container/decompression bug rather than a version
+// one. A whole real-game run was once misdiagnosed that way — every uncompressed package "failed to
+// extract" when in fact the game was UE5.6 and the harness had declared UE5.4.
+static void TestVerseCellsGate()
+{
+    // Read at UE5.6, the 8-byte cell-offsets block is consumed and everything past it lines up.
+    {
+        TestProvider provider(CUE4Parse::UE4::Versions::GAME_UE5_6);
+        auto mappings = std::make_shared<MemoryUsmapProvider>();
+        mappings->Load(MakeUsmap());
+        provider.MappingsContainer = mappings;
+        MountFixture(provider, /*verseCells=*/true);
+
+        auto* package = dynamic_cast<IoPackage*>(provider.TryLoadPackage("Game/TestPackage.uasset"));
+        CHECK(package != nullptr);
+        if (package == nullptr) return;
+
+        CHECK(package->GetName() == kPackageName);
+        CHECK(package->NameMap().size() == 2);
+        CHECK(package->ExportMap.size() == 1);
+        CHECK(package->ExportMap[0].PublicExportHash == 0x1234);
+        CHECK(package->BulkDataMap.empty());
+
+        // From UE5.3 on there are no export-bundle headers: the export's data is located by
+        // HeaderSize + CookedSerialOffset instead, so reaching its values proves that path too.
+        auto* obj = package->GetExportObject(0);
+        CHECK(obj != nullptr);
+        if (obj == nullptr) return;
+        CHECK(obj->Properties.size() == 3);
+        if (obj->Properties.size() != 3) return;
+        auto* ip = dynamic_cast<IntProperty*>(obj->Properties[0].Tag.get());
+        CHECK(ip != nullptr && ip->Value == 42);
+        auto* fp = dynamic_cast<FloatProperty*>(obj->Properties[1].Tag.get());
+        CHECK(fp != nullptr && fp->Value == 1.5f);
+    }
+
+    // The same bytes at UE5.5 (Ver 1013 < VERSE_CELLS 1015): the cell offsets are not consumed, so the name
+    // batch is read out of them and the count is nonsense. This must fail loudly, not read garbage.
+    {
+        TestProvider provider(CUE4Parse::UE4::Versions::GAME_UE5_5);
+        auto mappings = std::make_shared<MemoryUsmapProvider>();
+        mappings->Load(MakeUsmap());
+        provider.MappingsContainer = mappings;
+        MountFixture(provider, /*verseCells=*/true);
+
+        bool threw = false;
+        try { provider.LoadPackage("Game/TestPackage.uasset"); }
+        catch (const std::exception&) { threw = true; }
+        CHECK(threw);
+    }
+}
+
 int main()
 {
     TestUsmapParsing();
@@ -634,6 +773,7 @@ int main()
     TestIoPackageLoading();
     TestMissingMappingsIsAnError();
     TestMissingGlobalDataIsAnError();
+    TestVerseCellsGate();
 
     if (g_failures == 0) std::printf("test_zen_package: all checks passed\n");
     else std::printf("test_zen_package: %d check(s) failed\n", g_failures);

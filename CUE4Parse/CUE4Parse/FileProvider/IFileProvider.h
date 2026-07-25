@@ -16,12 +16,14 @@
 //     implement lightweight in-memory ones directly against this interface.
 #pragma once
 
+#include <memory>
 #include <string>
 
 #include "InternationalizationDictionary.h"
 #include "../UE4/Versions/VersionContainer.h"
 
 namespace CUE4Parse::MappingsProvider { class TypeMappings; }
+namespace CUE4Parse::FileProvider::Objects { class GameFile; }
 namespace CUE4Parse::UE4::Assets { class IPackage; }
 namespace CUE4Parse::UE4::Assets::Exports { class UObject; }
 
@@ -46,6 +48,11 @@ namespace CUE4Parse::FileProvider
 
         // Loads and parses (or returns the cached) package at `path`; null if it cannot be found/parsed.
         virtual UE4::Assets::IPackage* TryLoadPackage(const std::string& path) = 0;
+
+        // C#'s TryGetGameFile: the mounted file at `path`, or null. Non-pure so the lightweight in-memory
+        // providers the tests define need not implement a file table; the bulk-data layer uses it to reach
+        // the .ubulk / .uptnl / .m.ubulk sidecars of a cooked-index payload.
+        virtual std::shared_ptr<Objects::GameFile> TryGetGameFile(const std::string& path) const { return nullptr; }
 
         // C# convenience: the localized string for namespace/key, or defaultValue.
         std::string GetLocalizedString(const std::string& ns, const std::string& key, const std::string& defaultValue)

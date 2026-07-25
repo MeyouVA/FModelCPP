@@ -305,7 +305,16 @@ namespace CUE4Parse::FileProvider
         std::shared_ptr<GameFile> uexp;
         std::vector<std::shared_ptr<GameFile>> ubulks, uptnls;
         Files.FindPayloads(file, uexp, ubulks, uptnls);
-        // The ubulk/uptnl lazy readers are dropped with the bulk-data layer (see GameFile.h). TODO.
+
+        // C#: `header => ubulks[0].SafeCreateReader(header)`. Only the first of each is used, as in C#.
+        // The shared_ptr keeps the GameFile alive for as long as the package can still ask for the payload.
+        UE4::Assets::Readers::FAssetArchive::RawPayloadProvider lazyUbulk, lazyUptnl;
+        if (!ubulks.empty())
+            lazyUbulk = [f = ubulks[0]](const UE4::Assets::Objects::FByteBulkDataHeader* header)
+                { return f->SafeCreateReader(header); };
+        if (!uptnls.empty())
+            lazyUptnl = [f = uptnls[0]](const UE4::Assets::Objects::FByteBulkDataHeader* header)
+                { return f->SafeCreateReader(header); };
 
         auto* ioStoreEntry = dynamic_cast<UE4::IO::Objects::FIoStoreEntry*>(&file);
         auto* vfsFileProvider = dynamic_cast<Vfs::IVfsFileProvider*>(this);
@@ -325,12 +334,13 @@ namespace CUE4Parse::FileProvider
             // C#: new IoPackage(uasset, ioStoreEntry.IoStoreReader.ContainerHeader, lazyUbulk, lazyUptnl, vfsFileProvider)
             loaded.Package = std::make_unique<UE4::Assets::IoPackage>(
                 *loaded.UassetAr, ioStoreEntry->GetIoStoreReader().ContainerHeader(),
-                nullptr, nullptr, vfsFileProvider);
+                std::move(lazyUbulk), std::move(lazyUptnl), vfsFileProvider);
         }
         else
         {
             if (uexp != nullptr) loaded.UexpAr = uexp->CreateReader();
-            loaded.Package = std::make_unique<Package>(*loaded.UassetAr, loaded.UexpAr.get(), this);
+            loaded.Package = std::make_unique<Package>(*loaded.UassetAr, loaded.UexpAr.get(),
+                                                      std::move(lazyUbulk), std::move(lazyUptnl), this);
         }
 
         auto [it, inserted] = _loadedPackages.emplace(file.Path(), std::move(loaded));

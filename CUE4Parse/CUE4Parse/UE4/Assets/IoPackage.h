@@ -78,8 +78,8 @@ namespace CUE4Parse::UE4::Assets
         // looked up through the provider, as in C#).
         explicit IoPackage(FArchive& uasset,
                            IO::Objects::FIoContainerHeader* containerHeader = nullptr,
-                           FArchive* ubulk = nullptr,
-                           FArchive* uptnl = nullptr,
+                           Readers::FAssetArchive::RawPayloadProvider ubulk = nullptr,
+                           Readers::FAssetArchive::RawPayloadProvider uptnl = nullptr,
                            CUE4Parse::FileProvider::Vfs::IVfsFileProvider* provider = nullptr);
 
         const std::string& GetName() const override { return _name; }

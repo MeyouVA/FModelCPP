@@ -322,13 +322,13 @@ namespace CUE4Parse::UE4::Pak::Objects
         return *dynamic_cast<PakFileReader*>(Vfs);
     }
 
-    std::vector<uint8_t> FPakEntry::Read()
+    std::vector<uint8_t> FPakEntry::Read(const CUE4Parse::UE4::Assets::Objects::FByteBulkDataHeader* header)
     {
-        return Vfs->Extract(*this);
+        return Vfs->Extract(*this, header);
     }
 
-    std::unique_ptr<Readers::FArchive> FPakEntry::CreateReader()
+    std::unique_ptr<Readers::FArchive> FPakEntry::CreateReader(const CUE4Parse::UE4::Assets::Objects::FByteBulkDataHeader* header)
     {
-        return std::make_unique<Readers::FByteArchive>(Path(), Read(), Vfs->GetVersions());
+        return std::make_unique<Readers::FByteArchive>(Path(), Read(header), Vfs->GetVersions());
     }
 }

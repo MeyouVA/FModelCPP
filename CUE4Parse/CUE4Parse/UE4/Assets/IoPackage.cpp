@@ -108,14 +108,11 @@ namespace CUE4Parse::UE4::Assets
     };
 
     IoPackage::IoPackage(FArchive& uasset, IO::Objects::FIoContainerHeader* containerHeader,
-                         FArchive* ubulk, FArchive* uptnl,
+                         Readers::FAssetArchive::RawPayloadProvider ubulk,
+                         Readers::FAssetArchive::RawPayloadProvider uptnl,
                          CUE4Parse::FileProvider::Vfs::IVfsFileProvider* provider)
         : _provider(provider)
     {
-        // ubulk/uptnl would become FAssetArchive payloads in C#; that subsystem is deferred (see the header).
-        (void) ubulk;
-        (void) uptnl;
-
         _name = uasset.Name();
         if (const auto dot = _name.find_last_of('.'); dot != std::string::npos) _name = _name.substr(0, dot);
 
@@ -280,6 +277,12 @@ namespace CUE4Parse::UE4::Assets
         // Preload dependencies stay lazy: ImportedPackages() resolves _importedPackageIds on first use.
 
         if (!CanDeserialize()) return;
+
+        // Attach ubulk and uptnl
+        if (ubulk != nullptr)
+            uassetAr.AddPayload(Utils::PayloadType::UBULK, Summary.BulkDataStartOffset, std::move(ubulk));
+        if (uptnl != nullptr)
+            uassetAr.AddPayload(Utils::PayloadType::UPTNL, Summary.BulkDataStartOffset, std::move(uptnl));
 
         // Record where each export's serial data starts; GetExportObject deserializes from there on demand.
         const auto processEntry = [this](const FExportBundleEntry& entry, int pos, bool newPos) -> int

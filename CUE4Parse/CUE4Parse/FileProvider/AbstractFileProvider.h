@@ -96,7 +96,7 @@ namespace CUE4Parse::FileProvider
         // C#'s this[path]: FixPath + the umap/raw-path fallbacks; throws std::out_of_range on a miss.
         std::shared_ptr<Objects::GameFile> GetGameFile(const std::string& path) const;
         // C#'s TryGetGameFile: null on a miss instead of throwing.
-        std::shared_ptr<Objects::GameFile> TryGetGameFile(const std::string& path) const;
+        std::shared_ptr<Objects::GameFile> TryGetGameFile(const std::string& path) const override;
 
         // C#'s SaveAsset/TrySaveAsset.
         std::vector<uint8_t> SaveAsset(const std::string& path) const { return GetGameFile(path)->Read(); }

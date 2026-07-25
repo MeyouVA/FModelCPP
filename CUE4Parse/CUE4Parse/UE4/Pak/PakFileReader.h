@@ -47,7 +47,7 @@ namespace CUE4Parse::UE4::Pak
         UE4::Objects::Core::Misc::FGuid EncryptionKeyGuid() const override { return Info.EncryptionKeyGuid; }
         bool IsEncrypted() const override { return Info.EncryptedIndex; }
 
-        std::vector<uint8_t> Extract(VirtualFileSystem::VfsEntry& entry) override;
+        std::vector<uint8_t> Extract(VirtualFileSystem::VfsEntry& entry, const Assets::Objects::FByteBulkDataHeader* header = nullptr) override;
         void Mount(const Utils::StringComparer& pathComparer) override;
         std::vector<uint8_t> MountPointCheckBytes() override;
 

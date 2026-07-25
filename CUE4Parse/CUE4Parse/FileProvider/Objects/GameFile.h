@@ -3,9 +3,6 @@
 // computed lazily and invalidated when Path is reassigned, exactly as in C#.
 //
 // Deliberate differences from C#:
-//   * The FByteBulkDataHeader parameter on Read/CreateReader is dropped: that type belongs to the asset
-//     bulk-data layer, which is not ported. TODO: restore the parameter with that layer, at which point
-//     PakFileReader::Extract's partial-read branch becomes reachable.
 //   * The async wrappers (ReadAsync/SafeReadAsync/...) are omitted — Task.Run over a synchronous body is a
 //     C#-ism, and the port has no threading layer yet.
 //   * Extension interning (the ConcurrentDictionary) is dropped: std::string already owns its bytes and the
@@ -25,9 +22,14 @@
 #include "../../Utils/StringUtils.h"
 
 namespace CUE4Parse::UE4::Readers { class FArchive; }
+namespace CUE4Parse::UE4::Assets::Objects { struct FByteBulkDataHeader; }
 
 namespace CUE4Parse::FileProvider::Objects
 {
+    // An optional partial-read request: when non-null, only the header's [OffsetInFile, +SizeOnDisk) range
+    // of the entry is wanted. C# spells this FByteBulkDataHeader?.
+    using FByteBulkDataHeader = UE4::Assets::Objects::FByteBulkDataHeader;
+
     class GameFile
     {
     public:
@@ -62,12 +64,12 @@ namespace CUE4Parse::FileProvider::Objects
         bool IsUePackage() const { return IsKnown(UePackageExtensionsSet(), Extension()); }
         bool IsUePackagePayload() const { return IsKnown(UePackagePayloadExtensionsSet(), Extension()); }
 
-        virtual std::vector<uint8_t> Read() = 0;
-        virtual std::unique_ptr<UE4::Readers::FArchive> CreateReader() = 0;
+        virtual std::vector<uint8_t> Read(const FByteBulkDataHeader* header = nullptr) = 0;
+        virtual std::unique_ptr<UE4::Readers::FArchive> CreateReader(const FByteBulkDataHeader* header = nullptr) = 0;
 
         // C#'s TryRead/SafeRead collapse into one: nullopt means the read threw.
-        std::optional<std::vector<uint8_t>> SafeRead();
-        std::unique_ptr<UE4::Readers::FArchive> SafeCreateReader();
+        std::optional<std::vector<uint8_t>> SafeRead(const FByteBulkDataHeader* header = nullptr);
+        std::unique_ptr<UE4::Readers::FArchive> SafeCreateReader(const FByteBulkDataHeader* header = nullptr);
 
         std::string ToString() const { return _path; }
 

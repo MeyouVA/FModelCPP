@@ -51,15 +51,15 @@ namespace CUE4Parse::FileProvider::Objects
         return set.find(lower) != set.end();
     }
 
-    std::optional<std::vector<uint8_t>> GameFile::SafeRead()
+    std::optional<std::vector<uint8_t>> GameFile::SafeRead(const FByteBulkDataHeader* header)
     {
-        try { return Read(); }
+        try { return Read(header); }
         catch (const std::exception&) { return std::nullopt; }
     }
 
-    std::unique_ptr<UE4::Readers::FArchive> GameFile::SafeCreateReader()
+    std::unique_ptr<UE4::Readers::FArchive> GameFile::SafeCreateReader(const FByteBulkDataHeader* header)
     {
-        try { return CreateReader(); }
+        try { return CreateReader(header); }
         catch (const std::exception&) { return nullptr; }
     }
 }

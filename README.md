@@ -8,6 +8,10 @@ layout, same namespaces (`CUE4Parse::UE4::Readers`, ...), same type and method n
 The FModel app (originally WPF) is ported on **Qt 6 Widgets** and lives under `FModel/`. It keeps the same
 layout and structure as the C# UI. See [The FModel app](#the-fmodel-app) below.
 
+**[Docs/README.md](Docs/README.md) is the port status & roadmap** — what is done per layer, what remains in
+phases, and the recommended next slices. This file is the detail: the per-file porting table and the
+catalogue of deliberate differences from the C# source.
+
 ## The FModel app
 
 The `FModel/` directory is the C++ port of the WPF application, built on **Qt 6 Widgets** (chosen as the closest
@@ -139,6 +143,20 @@ foundation** everything else builds on:
 | Wwise flag enums (15) | `UE4/Wwise/Enums/Flags/*.cs` | `UE4/Wwise/Enums/Flags/*.h` |
 | FMod enums (16) | `UE4/FMod/Enums/*.cs` | `UE4/FMod/Enums/*.h` |
 | Remaining enum-only files (46) | across the tree (`Kismet`, `RigVM`, `RHI`, `i18N`, `Texture`, `Material`, `Animation`, `WorldPartition`, `VirtualFileCache`, …) | same relative paths, `.h` |
+| Wwise archive + version info | `UE4/Wwise/WwiseArchive.cs`, `WwiseVersionInfo.cs`, `WwiseFnv.cs` | `UE4/Wwise/WwiseArchive.h`, `WwiseVersionInfo.h`, `WwiseFnv.h` |
+| Wwise bank objects (57) | `UE4/Wwise/Objects/*.cs` | `UE4/Wwise/Objects/*.h` |
+| Wwise actions (15) | `UE4/Wwise/Objects/Actions/*.cs` | `UE4/Wwise/Objects/Actions/*.h` |
+| Wwise plugin params (~50) | `UE4/Wwise/Plugins/**/*.cs`, `WwisePlugin.cs` | `UE4/Wwise/Plugins/**/*.h`, `UE4/Wwise/WwisePlugin.h` |
+| Wwise HIRC hierarchy (33) | `UE4/Wwise/Objects/HIRC/**/*.cs` | `UE4/Wwise/Objects/HIRC/**/*.h` |
+| Bulk data | `UE4/Assets/Objects/{TBulkData,FByteBulkData,FByteBulkDataHeader,FIntBulkData,FColorBulkData}.cs` | same names, `.h` (+ `FByteBulkDataHeader.cpp`) |
+| Data resources | `UE4/Objects/UObject/FObjectDataResource.cs` | `UE4/Objects/UObject/FObjectDataResource.{h,cpp}` |
+| Property accessors | `UE4/Assets/Exports/UObject.cs` (PropertyUtil) | `UE4/Assets/Exports/PropertyUtil.{h,cpp}` |
+| Wwise reader | `UE4/Wwise/WwiseReader.cs`, `Objects/AkEntry.cs`, `FDeferredByteData.cs` | `UE4/Wwise/WwiseReader.{h,cpp}`, `Objects/AkEntry.h`, `FDeferredByteData.h` |
+| Wwise asset types (41) | `UE4/Assets/Exports/Wwise/*.cs` | `UE4/Assets/Exports/Wwise/*.h` |
+| FMod asset types (7) | `UE4/Assets/Exports/FMod/*.cs` | `UE4/Assets/Exports/FMod/*.h` |
+| FMod bank tree (105) | `UE4/FMod/**/*.cs` (all but `FModProvider.cs`) | `UE4/FMod/**/*.h` (+ `FModReader.cpp`) |
+| Sound export tree (22) | `UE4/Assets/Exports/Sound/**/*.cs` | `UE4/Assets/Exports/Sound/**/*.h` (+ `USoundWave.cpp`) |
+| MetaSound export tree (24) | `UE4/Assets/Exports/MetaSound/*.cs` | `UE4/Assets/Exports/MetaSound/*.h` |
 | Parser exceptions | `UE4/Exceptions/ParserException.cs` | `UE4/Exceptions/ParserException.{h,cpp}` |
 | FName (full) | `UE4/Objects/UObject/FName.cs` | `UE4/Objects/UObject/FName.h` |
 | Base archive | `UE4/Readers/FArchive.cs` | `UE4/Readers/FArchive.{h,cpp}` |
@@ -437,6 +455,17 @@ These are noted inline in the headers where they occur:
   `FPackageSummary` paths) and deserializes its exports. The TheFinals/ArcRaiders and NFS Mobile toc
   obfuscation IS ported (self-contained hardcoded-key AES, not GameTypes); eBaseballProSpirit extraction
   throws (needs GameTypes' trailer arithmetic).
+  - **Verified end to end on a retail game.** A **Satisfactory 1.2.0 (UE 5.6)** install — 2 containers,
+    48,616 files — reads completely: with an Oodle library handed to `OodleHelper::Initialize`, all
+    **23,699 `.uasset` files extract and parse**, and 110,664 export objects construct.
+  - **A misdeclared `EGame` is the failure mode to rule out first, because it does not look like one.**
+    An earlier run of this same install was read as UE 5.3/5.4 (a stale `AppSettings.json` entry from before
+    the game updated), which put `Ar.Ver` below `VERSE_CELLS` and so skipped the 8-byte
+    `FZenPackageCellOffsets` block those packages carry. The name batch was then read out of the cell
+    offsets, its count came out as ~10^8, and the parse died with *"Read size is bigger than remaining
+    archive length"* — which reads like a container or block-loop fault, and was recorded as one for a
+    while. Both sides of that gate are now pinned by `tests/test_zen_package.cpp`, which builds the same
+    fixture package in UE5.0 and UE5.6 shapes and asserts the UE5.6 one *fails* when read at UE5.5.
 - **Unversioned properties + the `.usmap` mappings provider are ported.** `UsmapParser` reads the whole
   container (magic/version, optional package versioning, Oodle/Brotli/Zstd compression, name LUT, enums,
   structs) into a `TypeMappings`; `AbstractFileProvider::MappingsContainer` feeds it to
@@ -445,6 +474,15 @@ These are noted inline in the headers where they occur:
   differences: `TypeMappings` is `shared_ptr`-owned (a `Struct` holds a back-pointer to it, so its address
   must be stable); C#'s `Lazy<Struct?> Super` becomes a cached `Super()` resolve; `PropertyType`/`PropertyInfo`
   are `shared_ptr` so a cloned array-element `PropertyInfo` shares its descriptor exactly as C# does.
+  - **Cross-validated against 18 real `.usmap` files** spanning UE 4.20 → 5.7 and usmap versions 0/1/3/4,
+    with an independent reference parser written from the format rather than from this code. The two agree on
+    every file: 15 parse (matching type/enum counts once C#'s last-wins `structs[s.Name] = s` dedupe is
+    accounted for) and the same 3 fail at the same byte. Those 3 are not port defects — they come from
+    dumpers whose format CUE4Parse does not implement. The clearest is Satisfactory's shipped
+    `CommunityResources/FactoryGame.usmap`: it writes `OptionalProperty` with **no inner type**, where every
+    other file (and both CUE4Parse and this port) recurse into one, and it carries 784 KB of trailing data
+    after the struct table. Reading it would mean guessing at a foreign layout, so the port fails it exactly
+    where the C# does.
 - **`IoPackage` deliberate differences.** C#'s `AbstractUePackage : UObject` base is not ported, so
   `IoPackage` implements `IPackage` directly (like `Package`) and repeats the small
   `ConstructObject`/`DeserializeObject` helpers. Export loading is lazy only: the export-bundle walk records
@@ -731,6 +769,144 @@ These are noted inline in the headers where they occur:
   bare `Objects::UObject::X` written *inside* `namespace …::Assets` now resolves to `Assets::Objects`, not
   `UE4::Objects`. Such references (in `IPackage`, `FAssetArchive`, `Package`, `ResolvedObject`) are now fully
   qualified as `CUE4Parse::UE4::Objects::UObject::X`.
+- **The Wwise soundbank tree is ported — 158 files, everything under `UE4/Wwise` bar three.** `FWwiseArchive`,
+  the FNV-1 hash, `WwiseVersionInfo`, the bank/AKPK headers, ~57 bank object structs, the 15 `CAkAction*`
+  classes, ~50 plugin parameter sets across nine vendor namespaces behind `WwisePlugin`'s ~75-arm dispatch,
+  and the whole HIRC hierarchy (25 container types) with C#'s rewind-and-reparse recovery. Conventions and
+  deliberate differences:
+  - `FWwiseArchive` **does not share a cursor with the archive it wraps.** C# overrides the `Position`
+    property to forward to the inner archive; `Position` is a plain field on this port's `FArchive` (see the
+    note at the top of `FArchive.h`), so the wrapper syncs its position into the inner around every `Read`
+    and `Seek` — which covers every inherited helper, since they all route through those two virtuals. The
+    visible consequence is that `Clone()` yields an **independent** cursor where C#'s shares one.
+  - `using FArchive::Read;` in `FWwiseArchive` is load-bearing, not tidiness: overriding the non-template
+    `Read(uint8_t*, int, int)` hides the inherited `Read<T>()` template, and `Ar.Read<uint32_t>()` then
+    parses `<` as less-than. `FByteArchive` sidesteps this by redeclaring the templates.
+  - Two near-identical pairs are kept distinct because they read different widths: `ReadBool()` (one byte,
+    Wwise) vs `FArchive::ReadBoolean()` (four), and `Read7BitEncodedIntBE()` — which accumulates
+    most-significant-first — vs `FArchive::Read7BitEncodedInt()`. Both pairs have call sites in this tree and
+    both are pinned by test (`0x82 0x03` is 259 big-endian, 386 little-).
+  - **Two C# file-level cycles are broken by relocating leaf types**, keeping the namespace and type names
+    unchanged and documenting the move at both ends: `AkSwitchGraphPoint`/`AkRtpcGraphPoint` move from
+    `AkRTPC.h` into `AkConversionTable.h`, and `AkFilterBand` into `CAkParameterEQFXParams.h`.
+  - C#'s explicit-layout union in `AkPropBundle` becomes an `AkUnionValue` holding the raw `uint32_t` with
+    `f32()`/`IsFloat()` accessors — the same magnitude guess C# makes, made explicit. `HierarchyEventAction`'s
+    `object?` payload becomes a type-erased `unique_ptr<IActionData>` plus a `Get<T>()` that returns null for
+    the wrong alternative. `AkDecisionTree` children are `unique_ptr` (the C# tree is reference-typed).
+  - `Enums::MapToCurrent(rawType, version)` must be **fully qualified** at its `Hierarchy` call site: both
+    arguments are plain integers, so ADL cannot reach the `Enums` namespace. The enum-argument overloads
+    (`MapToCurrent(EBankSourceFlags_v112)`, `HasFlag`) resolve normally.
+  - Every blitted struct carries `#pragma pack` and a `static_assert(sizeof(...))`, and every faithful quirk
+    is commented rather than "fixed" — the fourth unused byte per `AkFxChunk`, `CAkReflectFXParams`' curves
+    filled out of order by an embedded index, `DSPLfoWaveform`'s intentional CA1069 duplicate, the
+    `-42.0f` sentinel gating `CMBCRuntimeParams`' mode, `AkFolder`'s UTF-16 name (C#'s `char` is two bytes),
+    and `CREVSourceModelPlayerParams`' hand-rolled big-endian float read.
+  - `WwiseReader`, `WwiseProvider` and `Objects/AkEntry` are **deliberately excluded**: they need the
+    `FDeferredByteData` family, which is unported. They are the next slice, not a stub.
+- **The bulk-data / payload layer is ported, and with it the Wwise container reader.** `TBulkData<T>` +
+  `FByteBulkData` read a payload that lives out of line from the export that owns it; `FByteBulkDataHeader`
+  resolves where that is, three different ways (an index into a UE5 `IoPackage`'s `BulkDataMap`, an index
+  into a classic `Package`'s `DataResourceMap`, or an inline header — the two map arms give their 4 index
+  bytes back when the lookup misses). `FAssetArchive` regained its payload registry, and the optional
+  `FByteBulkDataHeader*` that narrows a read to one sub-range is threaded back through `GameFile::Read` and
+  both `IVfsReader::Extract` implementations. Conventions and deliberate differences:
+  - **`GetBulkArchive` returns a small `BulkArchiveRef` rather than an out-param.** Two of its arms hand
+    back a *borrowed* archive (the saved one) and three hand back one this port has to own (a sidecar
+    payload archive opened on the spot); C# lets the GC paper over that difference, C++ cannot.
+  - `GetPayload` likewise returns an **owning** `unique_ptr`, not a borrowed pointer. The payload *map*,
+    though, is `shared_ptr`-held so clones share it — matching C#'s explicit "carry over the payloads dict
+    to the cloned instance", which is a documented performance decision there.
+  - C#'s `Lazy<T[]?>` becomes an explicit `std::optional` cache filled on first `Data()` call. Same
+    laziness, and the same three-way distinction between *not read yet*, *read and empty* (a zero-size or
+    `BULKDATA_Unused` payload, which C# returns as an empty array) and *read and failed* (null).
+  - **`PropertyUtil` replaces .NET reflection with an overload set.** C#'s `FPropertyTagType.GetValue(Type)`
+    coerces a stored value to a runtime `Type`; the port has one `PropertyValue(tag, T&)` arm per shape C#
+    handles — exact scalar, struct fallback, object index, array, enum. Integer *widening* within one
+    signedness is folded in (so `GetOrDefault<uint32_t>` off a `UInt16Property` works as call sites expect)
+    while a signedness mismatch still fails, matching C#'s `is T` test. The one real gap: C# resolves an
+    `EnumProperty`'s stored text back to a member by reflecting over the enum, and there is no such table
+    here, so only the integer-backed form (what cooked unversioned assets actually store) converts. `TODO`.
+  - **`WwiseReader` walks a bank as (tag, length, payload) sections** and always re-seeks to each section's
+    declared end, whatever the handler did — the same contract `WwisePlugin` has. `WwiseDataSource`'s three
+    C# case records become one tagged struct; all three of its `ReadDeferredByteData` arms leave the cursor
+    past the range, so the section walk stays in step whether the bytes were deferred or copied.
+  - `Package` now reads its `DataResourceMap` (the header resolves through it) and both package types
+    attach their `ubulk`/`uptnl` payload providers, which `AbstractFileProvider` builds from the sidecar
+    `GameFile`s it already located.
+  - **`WwiseProvider` is deliberately excluded**, the one file left in `UE4/Wwise`: it drives extraction
+    across loaded packages and needs `AbstractVfsFileProvider::ProjectName` plus the object-loading path
+    behind `ObjectProperty`, neither of which is ported. `TODO`.
+- **The Sound + MetaSound export trees are ported — 46 files across `UE4/Assets/Exports/Sound` (22) and
+  `UE4/Assets/Exports/MetaSound` (24).** `USoundWave` and its `USoundBase`/`USoundWaveProcedural`/
+  `USoundSourceBus` line, `USoundCue` + the 20-odd `USoundNode*` graph classes, `USoundClass`, `UDialogueWave`,
+  the two `UMetaSoundSource` classes (the registered one under `MetaSound/`, plus the misspelt `UMetaUSoundSource`
+  under `Sound/` that C# keeps as a distinct type) and `UMetaSoundPatch`, and the whole `FMetasoundFrontend*`
+  struct family. Everything reads through `PropertyUtil`'s `GetOrDefault`/`GetArray`/`GetStructArray` and the
+  bulk-data layer, so only three small engine deps were new: `FStripDataFlags`, `FSubtitleCue`, `FFormatContainer`.
+  - **`USoundWave`'s streamed-vs-inlined guess is preserved verbatim:** nothing on disk records which it is, so
+    the port takes the version option as the starting guess and, if `SerializePlatformData` throws, rewinds the
+    cursor, flips the guess and re-reads — the same try/rewind/retry C# does.
+  - **Three C#/C++ shape mismatches are resolved with comments rather than "fixed":** `FSubtitleCue` keeps the
+    cue's *resolved string* because this port's `FText` is move-only and the property bag is const; `FFormatContainer`
+    keys its map with an explicit `FName` comparator (`FName` has no `operator<`); the `[StructFallback]` vectors are
+    built with `emplace_back` (`FStructFallback`/`FPropertyTag` are move-only).
+  - **Two faithful quirks are kept as-is:** `FMetasoundFrontendClassMetadata` reads `Type` off the *enum's* name
+    (`nameof(EMetasoundFrontendClassType)`, not `"Type"`), so it always comes back as the default; and
+    `FDialogueContext::operator==` compares two unresolved indices as *not* equal (null == null is false), matching
+    C#'s `!left?.Equals(right) ?? true`.
+  - **`PropertyUtil` gained a `SetProperty` arm** (`const UScriptSet*`) so Wwise's `FWwiseSwitchContainerLeafCookedData`
+    — which keeps its `GroupValueSet` raw — resolves; it had never been forced to instantiate before this slice.
+  - `test_sound_metasound` pins the hierarchy, the `[Flags]` helpers, the empty-bag defaults through every new
+    `PropertyUtil` arm, and both quirks above. The concrete types are **not yet registered** in `ObjectTypeRegistry`
+    (they load as generic `UObject` until then, as C# would resolve them by class). `TODO`.
+- **The FMOD bank tree is ported — 105 files, everything under `UE4/FMod` bar `FModProvider`.** `FModReader`
+  walks a `.bank` (a RIFF file of form type `"FEV "`) as a flat stream of (4-byte tag, 4-byte size, payload)
+  chunks, dispatching each `ERIFFID` to its node reader: the event/timeline/parameter/parameter-layout nodes,
+  the bus family (master/group/input/return/output-port), the effect family (built-in/plugin/send/sidechain/
+  spectral-sidechain/parameterized), the ten instrument types, transitions, modulators and their six subnodes,
+  curves, mappings, properties, controllers, snapshots and VCAs — plus the `FMT`/`BNKI`/`STDT`/`STBL`/`HASH`/
+  `SNDH`/`PLAT` metadata chunks and the 29 `Objects/` value structs. `Utils/EventNodesResolver` then walks an
+  event's node graph to collect the waveforms it references, and `Utils/JenkinsHash` (FMOD's `hashlittle2`)
+  keys the sound table. Covered by `tests/test_fmod_bank.cpp`.
+  - **`BinaryReader` is not `FArchive`, and here that is a correctness trap, not a style note.** C# reads this
+    format with `System.IO.BinaryReader`, whose `ReadBoolean`/`ReadByte` consume exactly **one** byte —
+    `FArchive::ReadBoolean()` consumes **four**. Every bool and byte field in this tree is one byte, so the
+    port never calls `ReadBoolean` in `UE4/FMod`: it uses `Ar.Read<uint8_t>() != 0`. Getting one wrong shifts
+    everything after it, and the chunk walker's corrective `Position = nextNode` seek at the end of each chunk
+    would *hide* the damage rather than report it — which is why the test asserts parsed values and cursor
+    positions, not just that parsing completed.
+  - **The C# tree is circular** — every node reader consults `FModReader.Version` and its static read helpers,
+    while `FModReader` holds dictionaries of those node types. The port breaks it in `FModReader.h`, which
+    **forward-declares** all 16 node types and holds them as `unordered_map<FModGuid, unique_ptr<Node>>`, so
+    the header the nodes include never includes the nodes. `~FModReader()` is therefore out-of-line in
+    `FModReader.cpp` (the one TU that sees the complete types); `unique_ptr` to an incomplete type is legal
+    right up to the point the destructor is instantiated.
+  - **`FModGuid` is not laid out like `FGuid`.** The conversion rotates `B` by 16 bits and byte-reverses `C`
+    and `D` to reach FMOD's on-wire ordering. It is a dictionary key throughout the tree, so it carries a
+    `std::hash` specialization.
+  - **The three "global readers" carry all the format's variable-length encoding, and two of them differ only
+    in where one field sits.** `ReadX16` is an `int16` whose high bit means "a following `uint16` supplies
+    bits 15+". `ReadElemListImp` and `ReadVersionedElemListImp` share the same count encoding
+    (`ReadX16() >> 1`) but the `uint16` payload size appears **once before the list** vs. **once per element**.
+    Each has a getter overload for lists of bare primitives, where C# passed a lambda.
+  - **The FSB5 sample decode is out of scope, and `FModProvider` is blocked on it.** C# hands each `SND` chunk's
+    (optionally obfuscated) FSB5 stream to the external **Fmod5Sharp** NuGet package, which is not part of
+    CUE4Parse's own source. Following the `FDeferredByteData` precedent from the Wwise port, `SoundDataNode`
+    keeps the raw FSB5 bytes plus the sub-sound count read out of the header (`FModSoundBank`), and
+    `EventNodesResolver` resolves to an `FWaveformRef {SoundBankIndex, SubsoundIndex}` instead of a decoded
+    `FmodSample` — bounds-checked against that count, which is exactly what C# checks against
+    `bank.Samples.Count`. `Fsb5Decryption` (bit-reverse then XOR with a repeating key) **is** ported: C#
+    applies it lazily per read using the absolute stream position, and because the port reads the whole FSB
+    region into a buffer starting at position 0 the buffer index equals that position, so one whole-buffer
+    transform is equivalent. `FModProvider` is the one file left in `UE4/FMod`: it needs both the missing
+    decoder's `RebuildAsStandardFileFormat` and `IFileProvider` config-ini wiring. `TODO`.
+  - **`FPackedNode.cs` is folded into `FRadixTreePacked.h`** (C# splits the class across two files with
+    `partial`); `FModSoundBank.h` is the one file with no C# counterpart, standing in for the Fmod5Sharp types.
+  - Faithful quirks kept with comments rather than "fixed": `TransitionRegionNode` reproduces C#'s
+    `ReadElemListImp<…>().FirstOrDefault()` as "the first element, or a default-constructed struct";
+    `ParseNodes` keeps the shift-back-by-3 recovery for a chunk that starts on a stray null terminator, and
+    the `visitedSoundNode` early break for banks that write duplicated FSB data outside an `SND` chunk;
+    `FBankInfo::FileVersion` is assigned from `FModReader::Version()` rather than read from the chunk.
 - **Not yet ported** (arrive with their layers): the
   dependency-graph `ExportLoader` (non-lazy) loading path, `.locres`
   localization loading (`FTextLocalizationResource`), the full `UStruct`/`UClass`-aware `ConstructObject`

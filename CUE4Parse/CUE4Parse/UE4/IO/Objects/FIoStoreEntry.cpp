@@ -47,13 +47,13 @@ namespace CUE4Parse::UE4::IO::Objects
         return *dynamic_cast<IoStoreReader*>(Vfs);
     }
 
-    std::vector<uint8_t> FIoStoreEntry::Read()
+    std::vector<uint8_t> FIoStoreEntry::Read(const CUE4Parse::UE4::Assets::Objects::FByteBulkDataHeader* header)
     {
-        return Vfs->Extract(*this);
+        return Vfs->Extract(*this, header);
     }
 
-    std::unique_ptr<Readers::FArchive> FIoStoreEntry::CreateReader()
+    std::unique_ptr<Readers::FArchive> FIoStoreEntry::CreateReader(const CUE4Parse::UE4::Assets::Objects::FByteBulkDataHeader* header)
     {
-        return std::make_unique<Readers::FByteArchive>(Path(), Read(), Vfs->GetVersions());
+        return std::make_unique<Readers::FByteArchive>(Path(), Read(header), Vfs->GetVersions());
     }
 }

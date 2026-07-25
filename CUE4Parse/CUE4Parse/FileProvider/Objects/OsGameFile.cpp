@@ -1,5 +1,7 @@
 #include "OsGameFile.h"
 
+#include "../../UE4/Assets/Objects/FByteBulkDataHeader.h"
+
 #include <fstream>
 #include <stdexcept>
 
@@ -34,10 +36,21 @@ namespace CUE4Parse::FileProvider::Objects
         (void) mountPoint; // unused in C# too — see header comment
     }
 
-    std::vector<uint8_t> OsGameFile::Read()
+    std::vector<uint8_t> OsGameFile::Read(const FByteBulkDataHeader* header)
     {
         std::ifstream stream(ActualFile, std::ios::binary);
         if (!stream) throw std::runtime_error("failed to open file: " + ActualFile.string());
+
+        // A header asks for one sub-range of the file rather than the whole of it.
+        if (header != nullptr)
+        {
+            stream.seekg(static_cast<std::streamoff>(header->OffsetInFile), std::ios::beg);
+            std::vector<uint8_t> partial(static_cast<size_t>(header->SizeOnDisk));
+            stream.read(reinterpret_cast<char*>(partial.data()), static_cast<std::streamsize>(partial.size()));
+            if (stream.gcount() != static_cast<std::streamsize>(partial.size()))
+                throw std::runtime_error("failed to read requested bulk range: " + ActualFile.string());
+            return partial;
+        }
 
         std::vector<uint8_t> bytes(static_cast<size_t>(FileSizeOrZero(ActualFile)));
         stream.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));

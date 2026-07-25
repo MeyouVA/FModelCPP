@@ -1,5 +1,7 @@
 #include "IoStoreReader.h"
 
+#include "../Assets/Objects/FByteBulkDataHeader.h"
+
 #include <algorithm>
 #include <cstring>
 #include <utility>
@@ -205,15 +207,23 @@ namespace CUE4Parse::UE4::IO
         throw std::out_of_range("Couldn't find chunk " + chunkId.ToString() + " in IoStore " + Name());
     }
 
-    std::vector<uint8_t> IoStoreReader::Extract(VirtualFileSystem::VfsEntry& entry)
+    std::vector<uint8_t> IoStoreReader::Extract(VirtualFileSystem::VfsEntry& entry,
+                                                const Assets::Objects::FByteBulkDataHeader* header)
     {
         auto* ioEntry = dynamic_cast<FIoStoreEntry*>(&entry);
         if (ioEntry == nullptr || entry.Vfs != this)
             throw std::invalid_argument("Wrong io store reader, required " + entry.Vfs->Path() + ", this is " + Path());
 
-        // The FByteBulkDataHeader offset/size narrowing is dropped with the type (see GameFile.h); the
-        // offsetInFile parameter below keeps the partial-read arithmetic intact around a zero offset.
-        return Read(ioEntry->Offset, ioEntry->Size);
+        const int64_t offset = ioEntry->Offset;
+        int64_t size = ioEntry->Size;
+        int64_t offsetInFile = 0;
+        if (header != nullptr)
+        {
+            size = header->SizeOnDisk;
+            offsetInFile = header->OffsetInFile;
+        }
+
+        return Read(offset, size, offsetInFile);
     }
 
     std::vector<uint8_t> IoStoreReader::Read(int64_t offset, int64_t length, int64_t offsetInFile)

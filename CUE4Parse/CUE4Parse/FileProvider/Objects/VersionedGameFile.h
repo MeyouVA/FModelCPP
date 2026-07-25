@@ -17,9 +17,9 @@ namespace CUE4Parse::FileProvider::Objects
     public:
         UE4::Versions::VersionContainer Versions;
 
-        std::unique_ptr<UE4::Readers::FArchive> CreateReader() override
+        std::unique_ptr<UE4::Readers::FArchive> CreateReader(const FByteBulkDataHeader* header = nullptr) override
         {
-            return std::make_unique<UE4::Readers::FByteArchive>(Path(), Read(), Versions);
+            return std::make_unique<UE4::Readers::FByteArchive>(Path(), Read(header), Versions);
         }
 
     protected:

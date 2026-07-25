@@ -63,8 +63,8 @@ public:
     CUE4Parse::Compression::CompressionMethod GetCompressionMethod() const override
     { return CUE4Parse::Compression::CompressionMethod::None; }
 
-    std::vector<uint8_t> Read() override { return {_content.begin(), _content.end()}; }
-    std::unique_ptr<FArchive> CreateReader() override
+    std::vector<uint8_t> Read(const CUE4Parse::UE4::Assets::Objects::FByteBulkDataHeader* header = nullptr) override { return {_content.begin(), _content.end()}; }
+    std::unique_ptr<FArchive> CreateReader(const CUE4Parse::UE4::Assets::Objects::FByteBulkDataHeader* header = nullptr) override
     { return std::make_unique<FByteArchive>(Path(), Read()); }
 
 private:
@@ -92,7 +92,7 @@ public:
     CUE4Parse::UE4::Versions::EGame Game() const override { return Versions.Game(); }
     CUE4Parse::UE4::Versions::FPackageFileVersion Ver() const override { return Versions.Ver(); }
     void Mount(const StringComparer&) override {}
-    std::vector<uint8_t> Extract(VfsEntry&) override { return {}; }
+    std::vector<uint8_t> Extract(VfsEntry&, const CUE4Parse::UE4::Assets::Objects::FByteBulkDataHeader* = nullptr) override { return {}; }
 };
 
 class FakeVfsEntry : public VfsEntry
@@ -104,8 +104,8 @@ public:
     bool IsEncrypted() const override { return false; }
     CUE4Parse::Compression::CompressionMethod GetCompressionMethod() const override
     { return CUE4Parse::Compression::CompressionMethod::None; }
-    std::vector<uint8_t> Read() override { return {_content.begin(), _content.end()}; }
-    std::unique_ptr<FArchive> CreateReader() override
+    std::vector<uint8_t> Read(const CUE4Parse::UE4::Assets::Objects::FByteBulkDataHeader* header = nullptr) override { return {_content.begin(), _content.end()}; }
+    std::unique_ptr<FArchive> CreateReader(const CUE4Parse::UE4::Assets::Objects::FByteBulkDataHeader* header = nullptr) override
     { return std::make_unique<FByteArchive>(Path(), Read()); }
 
 private:

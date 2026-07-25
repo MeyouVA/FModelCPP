@@ -8,9 +8,10 @@
 //   * Object loading uses only the lazy (useLazySerialization) path: each export is constructed +
 //     deserialized on first GetExportObject(i). The dependency-graph ExportLoader path (useLazySerialization
 //     == false, with PreloadDependencies) is not ported. ConstructObject is simplified to always build a base
-//     UObject (the UStruct/UClass traversal is deferred with those export types). No ubulk/uptnl payloads.
+//     UObject (the UStruct/UClass traversal is deferred with those export types).
 //   * The optional summary tables (thumbnails, DependsMap, PreloadDependencies, SoftObjectPaths,
-//     DataResourceMap, Trailer) are not read yet. TODO with their element types.
+//     Trailer) are not read yet. TODO with their element types. DataResourceMap IS read, because
+//     FByteBulkDataHeader resolves through it.
 //   * Cross-package import resolution is ported for classic packages: with a provider, ResolveImport walks to
 //     the outermost import package, TryLoadPackage's it, and matches the import by name + outer path name,
 //     resolving to the export in *that* package. The IoPackage branch is deferred with IoPackage; script
@@ -30,6 +31,7 @@
 #include "../Objects/UObject/FPackageFileSummary.h"
 #include "../Objects/UObject/FNameEntrySerialized.h"
 #include "../Objects/UObject/ObjectResource.h"
+#include "../Objects/UObject/FObjectDataResource.h"
 #include "../Readers/FArchive.h"
 
 namespace CUE4Parse::UE4::Assets
@@ -50,6 +52,8 @@ namespace CUE4Parse::UE4::Assets
         std::vector<FNameEntrySerialized> NameMapEntries;
         std::vector<FObjectImport> ImportMap;
         std::vector<FObjectExport> ExportMap;
+        // Read only when Summary.DataResourceOffset > 0; FByteBulkDataHeader indexes into it.
+        std::vector<CUE4Parse::UE4::Objects::UObject::FObjectDataResource> DataResourceMap;
         // Lazily-loaded export objects, parallel to ExportMap; a null slot means "not loaded yet".
         std::vector<std::unique_ptr<Exports::UObject>> ExportsLazy;
 
@@ -58,6 +62,8 @@ namespace CUE4Parse::UE4::Assets
         // Both archives (and the provider) must outlive the Package (bytes are re-read lazily on
         // GetExportObject; imports resolve through the provider on demand).
         explicit Package(FArchive& uasset, FArchive* uexp = nullptr,
+                         FAssetArchive::RawPayloadProvider ubulk = nullptr,
+                         FAssetArchive::RawPayloadProvider uptnl = nullptr,
                          CUE4Parse::FileProvider::IFileProvider* provider = nullptr);
 
         const std::string& GetName() const override { return _name; }

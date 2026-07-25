@@ -68,7 +68,7 @@ namespace CUE4Parse::UE4::Pak::Objects
 
         PakFileReader& GetPakFileReader() const;
 
-        std::vector<uint8_t> Read() override;
-        std::unique_ptr<Readers::FArchive> CreateReader() override;
+        std::vector<uint8_t> Read(const CUE4Parse::UE4::Assets::Objects::FByteBulkDataHeader* header = nullptr) override;
+        std::unique_ptr<Readers::FArchive> CreateReader(const CUE4Parse::UE4::Assets::Objects::FByteBulkDataHeader* header = nullptr) override;
     };
 }

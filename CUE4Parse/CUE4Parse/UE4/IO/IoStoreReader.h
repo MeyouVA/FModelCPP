@@ -81,7 +81,7 @@ namespace CUE4Parse::UE4::IO
         // The whole chunk with the given id; throws when it is not in this container.
         std::vector<uint8_t> Read(const Objects::FIoChunkId& chunkId);
 
-        std::vector<uint8_t> Extract(VirtualFileSystem::VfsEntry& entry) override;
+        std::vector<uint8_t> Extract(VirtualFileSystem::VfsEntry& entry, const Assets::Objects::FByteBulkDataHeader* header = nullptr) override;
         void Mount(const Utils::StringComparer& pathComparer) override;
         std::vector<uint8_t> MountPointCheckBytes() override;
 

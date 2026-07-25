@@ -27,8 +27,8 @@ namespace CUE4Parse::UE4::IO::Objects
         const FIoChunkId& ChunkId() const;
         IoStoreReader& GetIoStoreReader() const;
 
-        std::vector<uint8_t> Read() override;
-        std::unique_ptr<Readers::FArchive> CreateReader() override;
+        std::vector<uint8_t> Read(const CUE4Parse::UE4::Assets::Objects::FByteBulkDataHeader* header = nullptr) override;
+        std::unique_ptr<Readers::FArchive> CreateReader(const CUE4Parse::UE4::Assets::Objects::FByteBulkDataHeader* header = nullptr) override;
 
     private:
         uint32_t _tocEntryIndex = 0;

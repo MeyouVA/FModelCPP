@@ -1,5 +1,7 @@
 #include "PakFileReader.h"
 
+#include "../Assets/Objects/FByteBulkDataHeader.h"
+
 #include <algorithm>
 #include <stdexcept>
 #include <utility>
@@ -82,7 +84,8 @@ namespace CUE4Parse::UE4::Pak
         return reader->ReadBytes(static_cast<int>(Utils::Align(size, Aes::ALIGN)));
     }
 
-    std::vector<uint8_t> PakFileReader::Extract(VirtualFileSystem::VfsEntry& entry)
+    std::vector<uint8_t> PakFileReader::Extract(VirtualFileSystem::VfsEntry& entry,
+                                                const Assets::Objects::FByteBulkDataHeader* header)
     {
         auto* pakEntry = dynamic_cast<FPakEntry*>(&entry);
         if (pakEntry == nullptr || entry.Vfs != static_cast<VirtualFileSystem::IVfsReader*>(this))
@@ -95,10 +98,15 @@ namespace CUE4Parse::UE4::Pak
 
         const int alignment = pakEntry->IsEncrypted() ? Aes::ALIGN : 1;
 
-        // C# offsets these by the FByteBulkDataHeader when one is supplied; that type is not ported, so the
-        // request is always the whole entry. The arithmetic below is left general.
-        const int64_t offset = 0;
-        const int requestedSize = static_cast<int>(pakEntry->UncompressedSize);
+        // With a header the caller wants one bulk sub-range of the entry rather than all of it; the
+        // block arithmetic below is written against these two and so covers both cases.
+        int64_t offset = 0;
+        int requestedSize = static_cast<int>(pakEntry->UncompressedSize);
+        if (header != nullptr)
+        {
+            offset = header->OffsetInFile;
+            requestedSize = static_cast<int>(header->SizeOnDisk);
+        }
 
         if (pakEntry->IsCompressed())
         {

@@ -201,7 +201,7 @@ public:
         if (loaded != _loaded.end()) return loaded->second.get();
         const auto file = _files.find(path);
         if (file == _files.end()) return nullptr;
-        auto pkg = std::make_unique<Package>(*file->second, nullptr, this);
+        auto pkg = std::make_unique<Package>(*file->second, nullptr, nullptr, nullptr, this);
         auto* raw = pkg.get();
         _loaded.emplace(path, std::move(pkg));
         return raw;

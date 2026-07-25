@@ -31,6 +31,6 @@ namespace CUE4Parse::FileProvider::Objects
             return Compression::CompressionMethod::None;
         }
 
-        std::vector<uint8_t> Read() override;
+        std::vector<uint8_t> Read(const FByteBulkDataHeader* header = nullptr) override;
     };
 }

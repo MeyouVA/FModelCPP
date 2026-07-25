@@ -7,7 +7,6 @@
 //     StringComparer the caller passed to Mount, holding shared_ptr because the updated pak index can
 //     alias one non-encoded entry under several paths.
 //   * MountTo/FileProviderDictionary are not ported: FileProvider/Vfs has no C++ counterpart yet. TODO.
-//   * The FByteBulkDataHeader parameter on Extract is dropped along with the type (see GameFile.h).
 #pragma once
 
 #include <cstdint>
@@ -19,6 +18,8 @@
 #include "../../FileProvider/Objects/GameFile.h"
 #include "../../Utils/StringComparer.h"
 #include "../Versions/VersionContainer.h"
+
+namespace CUE4Parse::UE4::Assets::Objects { struct FByteBulkDataHeader; }
 
 namespace CUE4Parse::UE4::VirtualFileSystem
 {
@@ -49,6 +50,6 @@ namespace CUE4Parse::UE4::VirtualFileSystem
         virtual Versions::FPackageFileVersion Ver() const = 0;
 
         virtual void Mount(const Utils::StringComparer& pathComparer) = 0;
-        virtual std::vector<uint8_t> Extract(VfsEntry& entry) = 0;
+        virtual std::vector<uint8_t> Extract(VfsEntry& entry, const Assets::Objects::FByteBulkDataHeader* header = nullptr) = 0;
     };
 }

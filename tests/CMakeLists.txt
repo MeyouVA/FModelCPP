@@ -165,3 +165,19 @@ add_test(NAME test_wwise_fmod_enums COMMAND test_wwise_fmod_enums)
 add_executable(test_bulk_enums test_bulk_enums.cpp)
 target_link_libraries(test_bulk_enums PRIVATE CUE4Parse)
 add_test(NAME test_bulk_enums COMMAND test_bulk_enums)
+
+add_executable(test_wwise test_wwise.cpp)
+target_link_libraries(test_wwise PRIVATE CUE4Parse)
+add_test(NAME test_wwise COMMAND test_wwise)
+
+add_executable(test_bulkdata_wwisereader test_bulkdata_wwisereader.cpp)
+target_link_libraries(test_bulkdata_wwisereader PRIVATE CUE4Parse)
+add_test(NAME test_bulkdata_wwisereader COMMAND test_bulkdata_wwisereader)
+
+add_executable(test_sound_metasound test_sound_metasound.cpp)
+target_link_libraries(test_sound_metasound PRIVATE CUE4Parse)
+add_test(NAME test_sound_metasound COMMAND test_sound_metasound)
+
+add_executable(test_fmod_bank test_fmod_bank.cpp)
+target_link_libraries(test_fmod_bank PRIVATE CUE4Parse)
+add_test(NAME test_fmod_bank COMMAND test_fmod_bank)

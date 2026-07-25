@@ -37,10 +37,68 @@ namespace CUE4Parse::UE4::Assets::Readers
 
     std::unique_ptr<FArchive> FAssetArchive::Clone() const
     {
-        // Wrap a cloned base so the clone is independent (payloads are deferred, so nothing else to carry).
-        auto clone = std::unique_ptr<FAssetArchive>(new FAssetArchive(_baseArchive->Clone(), Owner, AbsoluteOffset));
+        // Wrap a cloned base so the clone is independent, but carry the payload map over by reference —
+        // C# does the same, and payloads are only ever registered during package initialization.
+        auto clone = std::unique_ptr<FAssetArchive>(
+            new FAssetArchive(_baseArchive->Clone(), Owner, AbsoluteOffset, _payloads));
         clone->Position = Position;
         return clone;
+    }
+
+    std::unique_ptr<FAssetArchive> FAssetArchive::GetPayload(PayloadType type,
+                                                            const Objects::FByteBulkDataHeader* header) const
+    {
+        const auto it = _payloads->find(type);
+        std::unique_ptr<FAssetArchive> reader;
+        if (it != _payloads->end() && it->second) reader = it->second(header);
+        if (reader == nullptr)
+            throw Exceptions::ParserException(*this,
+                "Requested payload of type " + std::string(Utils::ToExtension(type)) + " was not found");
+        return reader;
+    }
+
+    std::unique_ptr<FAssetArchive> FAssetArchive::TryGetPayload(PayloadType type,
+                                                               const Objects::FByteBulkDataHeader* header) const
+    {
+        try
+        {
+            return GetPayload(type, header);
+        }
+        catch (...)
+        {
+            return nullptr;
+        }
+    }
+
+    void FAssetArchive::AddPayload(PayloadType type, int absoluteOffset, RawPayloadProvider payload)
+    {
+        if (_payloads->count(type) != 0)
+            throw Exceptions::ParserException(*this,
+                "Can't add a payload that is already attached of type " + std::string(Utils::ToExtension(type)));
+
+        IPackage* owner = Owner;
+        (*_payloads)[type] = [payload = std::move(payload), owner, absoluteOffset](const Objects::FByteBulkDataHeader* header)
+            -> std::unique_ptr<FAssetArchive>
+        {
+            auto rawAr = payload(header);
+            if (rawAr == nullptr) return nullptr;
+            return std::unique_ptr<FAssetArchive>(new FAssetArchive(std::move(rawAr), owner, absoluteOffset, nullptr));
+        };
+    }
+
+    void FAssetArchive::AddPayload(PayloadType type, std::shared_ptr<FAssetArchive> payload)
+    {
+        if (_payloads->count(type) != 0)
+            throw Exceptions::ParserException(*this,
+                "Can't add a payload that is already attached of type " + std::string(Utils::ToExtension(type)));
+
+        (*_payloads)[type] = [payload = std::move(payload)](const Objects::FByteBulkDataHeader*)
+            -> std::unique_ptr<FAssetArchive>
+        {
+            if (payload == nullptr) return nullptr;
+            auto clone = payload->Clone();
+            return std::unique_ptr<FAssetArchive>(static_cast<FAssetArchive*>(clone.release()));
+        };
     }
 
     FName FAssetArchive::ReadFName()
