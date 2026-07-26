@@ -149,6 +149,35 @@ namespace FModel::Settings
         raisePropertyChanged(QStringLiteral("PerDirectory"));
     }
 
+    void UserSettings::addPerDirectory(const QString& gameDirectory, DirectorySettings* settings)
+    {
+        // C#'s `PerDirectory[dir] = setting`. The map owns its values here, so a replaced entry is deleted —
+        // unless it is the one CurrentDir points at, which would leave a dangling pointer behind.
+        if (DirectorySettings* existing = _perDirectory.value(gameDirectory, nullptr))
+        {
+            if (existing == _currentDir)
+                _currentDir = nullptr;
+            delete existing;
+        }
+
+        if (settings != nullptr)
+            settings->setParent(this);
+        _perDirectory.insert(gameDirectory, settings);
+        raisePropertyChanged(QStringLiteral("PerDirectory"));
+    }
+
+    void UserSettings::removePerDirectory(const QString& gameDirectory)
+    {
+        DirectorySettings* existing = _perDirectory.take(gameDirectory);
+        if (existing == nullptr)
+            return;
+
+        if (existing == _currentDir)
+            _currentDir = nullptr;
+        delete existing;
+        raisePropertyChanged(QStringLiteral("PerDirectory"));
+    }
+
     void UserSettings::setManualGames(const QHash<QString, DetectedGame>& value)
     {
         _manualGames = value;

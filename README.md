@@ -29,8 +29,9 @@ Qt6 is found; the CUE4Parse library and tests build fine without it.
   tab control — INFORMATION blocks use FModel's value-left / caption-right layout; the right side with the
   explorer / editor-tab-strip ("New Tab" + a `+` add-tab button) stack, the bottom-right preview-toggle buttons, and
   the Log pane (showing FModel's intro lines). Named widgets keep their WPF `x:Name` (as members + `objectName`).
-  The deep wiring (ApplicationViewModel / CUE4Parse provider / thread worker) is **not** ported yet — menu actions
-  and controls are inert placeholders that log to the output pane.
+  Menu actions now run through the real `MenuCommand`; the deeper wiring (CUE4Parse provider / thread worker) is
+  **not** ported yet, so the arms that need it log which port they are waiting on, and the other controls are
+  still inert placeholders.
 - **Theme** (`FModel/Theme.{h,cpp}`): reproduces FModel's **AdonisUI Dark** color scheme (App.xaml) as a Qt Fusion
   `QPalette` + global stylesheet — exact AdonisUI layer colors (window `#2A2B34`, panels `#32323F`, insets `#262630`,
   foreground `#f0f0f0`) with FModel's App.xaml accent overrides (accent `#206BD4`, alert `#D49220`, error `#C22B2B`).
@@ -58,8 +59,8 @@ Qt6 is found; the CUE4Parse library and tests build fine without it.
     `SelectedLeftTabIndex` **ignores** anything outside `[0, 2]` rather than clamping. A clamping port would
     look identical in the UI and differ on every rejected assignment, so both are covered by tests.
   - **Deferred, each blocked on its own port:** `CUE4ParseViewModel` (1590 C# lines) and with it the
-    VFS-registered/mounted/unmounted handlers and `UpdateProvider`; `CustomDirectories`, `SettingsView`,
-    `AesManager`, `AudioPlayer`; the three commands; `AvoidEmptyGameDirectory`/`AddGameDirectory`/`Restart`
+    VFS-registered/mounted/unmounted handlers and `UpdateProvider`; `CustomDirectories`,
+    `AesManager`, `AudioPlayer`; `AvoidEmptyGameDirectory`/`AddGameDirectory`/`Restart`
     (they drive the `DirectorySelector` window and a process restart); and the static `Init*` DLL helpers.
     `gameDisplayName()` therefore returns `"Unknown"`, which is also C#''s null branch.
   - **The constructor deliberately does not exit.** C#''s hard-exits the process when no game directory is
@@ -76,7 +77,39 @@ Qt6 is found; the CUE4Parse library and tests build fine without it.
   - **`EGameName`** was added to CUE4Parse (`UE4/Versions/EGame.{h,cpp}`) for the window title: C#''s
     `EGame.ToString()`, generated from the 234 members'' declaration order with the three pure aliases
     collapsed to the first-declared name, as .NET does.
-  Covered by `FModel/tests/test_application_viewmodel.cpp`.- **Settings** (`FModel/Settings/`): the whole persisted settings tree — `UserSettings` (the root, ~70 stored
+  Covered by `FModel/tests/test_application_viewmodel.cpp`.
+- **Commands** (`FModel/ViewModels/Commands/`): `MenuCommand`, `CopyCommand` and `RightClickMenuCommand` on the
+  `ViewModelCommand<T>` base, exposed as the three lazy `ApplicationViewModel` properties WPF binds to
+  (`??=` → built on first read, owned by the view-model). `MainWindow`'s `onMenuCommand` stand-in is gone — the
+  menu `QAction`s carry the same parameter strings WPF puts in `CommandParameter` and run the real command.
+  Notes:
+  - **Every arm of all three switches is ported, but most of `MenuCommand`'s targets are not.** Those arms
+    raise a `deferred(parameter, waitingOn)` signal naming the port they wait on, which `MainWindow` logs;
+    the four that fully work are the three external links and *Open Output Directory* (`Process.Start` with
+    `UseShellExecute` → `QDesktopServices::openUrl`, behind a static handler seam so a test can observe it).
+    The `Settings` arm now opens the real dialog: C#'s `Helper.OpenWindow<AdonisWindow>` is unported, so
+    `MenuCommand` gained a second seam (`setOpenWindowHandler`) that `MainWindow` installs, and the arm falls
+    back to `deferred` when no host is installed (which is what the command-layer tests see).
+    An unrecognised string still does nothing at all, because C#'s switch has no `default`.
+  - **`RightClickMenuCommand` is dispatch plus arithmetic.** The 11-trigger → (action, show type, bulk type)
+    table, the bulk type → (directory, log word) table, the group-by-directory pass, the export-path builder
+    and the folder/asset selection split are all ported and tested; the extraction walk they feed waits on
+    `CUE4ParseViewModel`. The
+    "more than one asset in this directory" flag is what folds `EBulkType::Auto` into the bulk mask, and
+    `Meshes`/`Animations` deliberately share the model directory while logging different words.
+  - **The two arms that needed `TreeItem` are ported now that it exists.** `MenuCommand`'s non-string arm
+    re-selects a folder (false then true, which is what makes the explorer re-read it), and
+    `setFoldersIsExpanded` — the breadth-first collapse / reverse-order expand walk — is public so it can be
+    driven without the unported view-model that owns the tree. `ToolBox_Collapse_All` still defers, because
+    the *route* to the tree is `CUE4Parse.AssetsFolder`.
+  - **`EBulkType` needed operators.** C# gets `|`/`&`/`HasFlag` free on any enum; `Enums.h` now spells them
+    out for the one flag enum that uses them.
+  - **`object[]` parameters become a `QVariantList`** of `{trigger, selection}`, the selection holding
+    `GameFile*`. C# also accepts `GameFileViewModel` (unwrapped to `.Asset`) and `TreeItem` folders; both
+    view-models are unported, so those arms are absent and the folder half of the export walk stays empty.
+  - **Nothing in the tests writes to the real clipboard** — `CopyCommand`'s line building is split into a
+    `buildText` static for that reason, and `execute` is only driven with the payloads that must be ignored.
+  Covered by `FModel/tests/test_commands.cpp`.- **Settings** (`FModel/Settings/`): the whole persisted settings tree — `UserSettings` (the root, ~70 stored
   properties), `DirectorySettings` (per game directory), `EndpointSettings`, `VersioningSettings` and
   `CustomDirectory`, plus the DTOs they embed (`AesResponse`, `AuthResponse`, `DetectedGame`). Covered by
   `FModel/tests/test_settings.cpp`. Notes on this layer:
@@ -114,6 +147,154 @@ Qt6 is found; the CUE4Parse library and tests build fine without it.
     hermetic and reproducible — a real `AppSettings.json` holds live AES keys. Point `FMODEL_SETTINGS_FIXTURE`
     at one to additionally assert that load → save → load is a fixed point and that no key is dropped; this was
     run against a real 38-directory file, which passes.
+- **The Settings dialog** — `ViewModels/SettingsViewModel.{h,cpp}`, `Views/SettingsView.{h,cpp}` and the two
+  editors it hosts, `Views/Resources/Controls/{DictionaryEditor,EndpointEditor}.{h,cpp}`. This is the first
+  `MenuCommand` arm to stop being deferred, and the first *editing* surface over the settings tree: the
+  view-model snapshots ~25 settings on `Initialize`, the view builds the four tabs (General / Models & Anims /
+  Textures & Audio / Advanced) out of those, and `Save` diffs the snapshots to decide what the app must reload.
+  Covered by `FModel/tests/test_settings_view.cpp` (19 slots). Notes:
+  - **`Save` returns "what should I do" *and* a restart flag, and the restart test is reference identity.**
+    C# compares the three versioning collections with `!=` on `IList`/`IDictionary`, so OK'ing a
+    `DictionaryEditor` forces a restart **even when the JSON is unchanged** — the editor hands back a new
+    object. C++ values would compare equal, so the port carries three `_customVersionsReplaced` /
+    `_optionsReplaced` / `_mapStructTypesReplaced` flags set only on the public setters (the editor's path) and
+    bypassed by `initialize()`. Same observable behaviour, spelled out instead of implied.
+  - **Two upstream slips are reproduced, not fixed.** `Initialize()` assigns
+    `SelectedCompressionFormat = _selectedCompressionFormat` — the still-default backing field where every
+    neighbouring line uses the snapshot — so the compression combo opens on `None` and OK persists that. And
+    the mappings watcher is sticky (`if (!_mappingsUpdate) _mappingsUpdate = …`), so undoing an edit before OK
+    still reloads mappings. Both are pinned by tests so a later "cleanup" can't quietly change behaviour.
+  - **`EnumerateUeGames` needed `Enum.GetValues<EGame>()`.** `EGame.{h,cpp}` gained `EGameValues()`, a table
+    kept in lockstep with the existing `EGameName` switch (generated from it, so the two cannot drift). The
+    C# pipeline is `GroupBy((int) value).Select(First)` then `OrderBy(v => ((int) v & 0xFF) == 0)` — a
+    **stable** sort putting game-specific members before base engine versions; the port does the same in two
+    passes rather than sorting.
+  - **`EnumExtensions` is ported only where it has a call site.** `GetDescription`'s *fallback* is the whole
+    point: `EGame` carries no `[Description]`, so the description is built by masking `~0xFFFF` and stepping
+    back `current - target` **array positions** to name the base version — "GAME_ArkSurvivalEvolved
+    (GAME_UE4_5)", while a base version renders its own decimal, "GAME_UE5_3 (84934656)".
+  - **`DictionaryEditor` round-trips through a scratch `VersioningSettings`** rather than duplicating the
+    `FGuid` JSON converter, which also guarantees the text it shows matches `AppSettings.json`'s shape exactly.
+    C# leaves all three collections **null** by default and each ctor writes `collection ?? _defaultX`, which
+    is why an unconfigured game shows a sample document; C++ values start empty, so emptiness stands in for
+    null. Broken JSON does not close the dialog — it turns the label red, verbatim.
+  - **`EndpointEditor` mutates the live `EndpointSettings`** and gates OK on `_isTested && endpoint->isValid()`.
+    `OnTest` deliberately does **not** set `_isTested` upstream (only a successful *send* does), so a "tested"
+    endpoint that was never sent still can't be OK'd; `onSend`/`onTest` raise `deferred` because the HTTP
+    layer is unported.
+  - **Deferred inside `OnClick`:** the restart warning, the four `CUE4ParseViewModel` reload steps
+    (`ClearProvider`/`LoadLocalizedResources`/mappings) and the provider's `ReadScriptData`/`ReadShaderMaps`
+    flags. The dialog still writes `UserSettings::Save()` itself, so the file is correct either way.
+  - **`TryParseKey` keeps its dead statement.** Upstream computes
+    `int numberBase = text.All(Uri.IsHexDigit) ? 16 : 10;` and never uses it — the parse keys off `isHex`
+    alone, and `ulong.TryParse` zeroes its `out` on failure, which the port reproduces.
+  - **The JSON theme preview keeps its literal escapes.** C# raw string literals (`"""…"""`) do not process
+    escapes, so the preview text really contains the two characters `\n`. A C++ `R"(...)"` behaves the same;
+    a test pins it so nobody "fixes" it into a line break.
+  - **Deliberate view-layer differences (Settings window):** no `ApplicationService` locator (the view is handed its settings),
+    explicit bindings instead of XAML ones, the Creator entry stays hidden (its view-model is unported), a
+    `browseHandler` seam so the directory pickers are testable, a non-recolouring theme preview, and
+    `MainWindow` runs the dialog **modal** where C# shows it modeless behind `Helper`'s single-instance guard.
+- **The explorer's folder tree** — `ViewModels/AssetsFolderViewModel.{h,cpp}` (which holds both `TreeItem` and
+  `AssetsFolderViewModel`, as the C# file does), `ViewModels/AssetsListViewModel.{h,cpp}` and the row
+  view-model `ViewModels/GameFileViewModel.{h,cpp}`, sitting on `Framework/RangeObservableCollection.h` and a
+  new `Framework/CollectionView.h`. One method — `bulkPopulate` — turns the provider's flat file list into
+  the nested structure the left pane binds to. Covered by `FModel/tests/test_assets_folder.cpp` (22 slots).
+  Notes:
+  - **`Framework/CollectionView.h` has no C# counterpart.** It stands in for WPF's
+    `ICollectionView`/`ListCollectionView` the way `Utils/Json.h` stands in for Newtonsoft: a sort
+    comparison, an optional filter, `refresh()`, and invalidation driven by the source collection's change
+    signal. C# names a property in a `SortDescription` and WPF reflects on it; C++ has no reflection, so the
+    comparison is passed directly. Grouping, currency and the editing transactions are not modelled because
+    nothing in the ported tree uses them.
+  - **The suppression flag is the whole performance story, and it is observable.** `bulkPopulate` builds the
+    tree with every collection muted and only un-mutes it depth-first at the end, so each view materialises
+    once instead of once per file. A view is *not* invalidated while its source is muted — which is why the
+    un-mute has to come before the hand-raised `InvokeOnCollectionChanged`, and why a port that skipped the
+    recursion would leave every collection below the first level permanently stale. Both are asserted.
+  - **`AddRange` clears the suppression flag it set, even if the caller had set it first.** That is C#'s
+    ordering, and `bulkPopulate` depends on it: the roots collection is re-armed by the `AddRange` itself.
+  - **A path with no `/` at all goes into a synthetic `Content` bucket**, shared by every such file, with a
+    null `Parent`. Everything else contributes `folders[0 .. n-2]` as nodes — the file name is never a node,
+    which is what makes `PathAtThisPoint` correct for the export paths built from it.
+  - **The root selection happens after publishing, on purpose.** Upstream's comment says why: selecting a
+    detached `TreeItem` lets WPF auto-select the first root instead. The project-name lookup that picks
+    *which* root is a service-locator read in C#, so it is a static seam here; with no name, C#'s
+    `?? treeItems[0]` fallback picks the first root built.
+  - **`GameFileViewModel` is ported by extension only.** The extension switch — 27 data types, the byte-code
+    and audio and soundbank and font sets, and the six game-gated arms — is complete and tested. The other
+    resolver loads the asset as a package and runs a ~60-arm type switch over its main export; that needs
+    `CUE4ParseViewModel`, the concrete `UExport` tree and a texture decoder, so the row is marked resolved
+    and `deferred` is raised. The two extension shortcuts C# takes *before* touching the provider (`umap` →
+    World, `_BuiltData` → MapBuildDataRegistry) are ported.
+  - **Another upstream slip preserved:** the image arm writes `Resolved |= ~EResolveCompute.Preview`. C#'s
+    `~` runs on the underlying int and is not masked to the declared bits, so that ORs in every bit *except*
+    Preview rather than clearing it, leaving `Resolved` at `~0`. The visible consequence is that
+    `Resolved == EResolveCompute.All` is then false, so `OnIsVisible` never takes its early return for an
+    image row. A `&= ~` was presumably meant; a test pins the current behaviour.
+  - **The `AssetCategory` setter marks the row's category resolved unconditionally** — outside the "did it
+    change" guard, per upstream's own comment. The extension switch's `default:` arm relies on it: it assigns
+    `All`, the value the row already has, purely for that side effect.
+  - **Deferred:** `PreviewImage`/`NumTextures` (written only by the two decode arms), `ExtractAsync` (needs
+    `ThreadWorkerViewModel`), `SearchVm.ChangeCollection`, and the WPF dispatcher marshalling around
+    `CombinedEntries` and `BulkPopulate`, which has no counterpart here.
+
+- **The game-loading pipeline** — `ViewModels/CUE4ParseViewModel.{h,cpp}` (the provider host),
+  `ViewModels/ThreadWorkerViewModel.{h,cpp}` + `Framework/AsyncQueue.h` (the job funnel every step runs
+  through), `ViewModels/GameDirectoryViewModel.{h,cpp}` (the Archives tab), `ViewModels/AesManagerViewModel.{h,cpp}`
+  + `Framework/FullyObservableCollection.h`, `Helper.{h,cpp}`, `ViewModels/Commands/LoadCommand.{h,cpp}`,
+  the rest of `ViewModels/GameSelectorViewModel.{h,cpp}`, and the two windows the flow needs —
+  `Views/DirectorySelector.{h,cpp}` and `Views/AesManager.{h,cpp}`. `ApplicationViewModel` gained
+  `CUE4Parse`/`AesManager`/`ThreadWorker`, the three Vfs event handlers and `updateProvider`; `MainWindow`
+  runs the startup sequence and binds the Archives list, the Load button and the folder tree. Covered by
+  `FModel/tests/test_loading.cpp` (20 slots) **and by three retail installs** (see `Docs/README.md`). Notes:
+  - **`CUE4ParseViewModel` is ported by half, on purpose.** The C# file is ~1,800 lines; the *loading* half
+    is here (provider selection, `Initialize`, `LoadVfs`, `ClearProvider`, the local-file mappings branch,
+    `LoadVirtualPaths`, `LoadLocalizedResources`, `VerifyConsoleVariables`). Everything from
+    `ExtractSelected` down — extraction, export, the JSON/metadata/references tabs, Lua decompilation, audio,
+    the Snooper viewport — is not, and each is called out at its site.
+  - **Everything runs on the calling thread.** C# hands each job to the thread pool
+    (`await Task.Run(() => job(token))`) and the UI stays live; the port has no threading layer, so
+    `ThreadWorkerViewModel::begin` runs the job synchronously. The queue, the status transitions, the
+    cancellation token and the "already busy" signal all behave as upstream — only the thread is missing.
+    One consequence is directly observable and pinned by a test: because the status is `Loading` for the
+    whole drain, a job that calls `begin()` again is *refused*, not queued. That is C#'s guard too, and it is
+    what stops a second Load while one is running.
+  - **Two live-service entries are rejected rather than misread.** `fortnite-live.manifest` and
+    `valorant-live.manifest` are sentinel "directories" that C# turns into a `StreamedFileProvider` fed by
+    Epic's manifest parser. None of that is ported, so the constructor leaves the provider null and says so —
+    pointing a `DefaultFileProvider` at a non-existent path would have looked like a broken install.
+  - **The launcher auto-detection is not ported.** C#'s `EnumerateDetectedGames` probes every drive for
+    Epic's `LauncherInstalled.dat`, Riot's installs JSON, Steam's `libraryfolders.vdf` + `.acf` manifests,
+    and two registry keys, to pre-populate ~20 games. That is platform-specific format parsing with no
+    bearing on the port's spine; a user browses to a directory instead. **`TryDetectUeVersion` IS ported**,
+    including its walk down to a `Paks` folder and up to `Binaries\Win64`, reading the UE version out of the
+    exe's Win32 version resource (C# reads the same data through `FileVersionInfo`).
+  - **`Helper::fixKey` keeps its off-by-two.** The guard is `keySpan.Length > sizeof(char) * (2 + 32)`, and
+    `sizeof(char)` is **2** in C#, so the limit is 68 characters rather than the 66 a prefixed 256-bit key
+    occupies. A 67- or 68-character key passes and comes back longer than any key can be, instead of being
+    rejected as a "bullshit key". Pinned by a test.
+  - **`AesManagerViewModel`'s rows ARE the Archives tab's rows.** `EnumerateAesKeys` yields the very same
+    `FileItem` objects, after stamping each with the key from settings — so editing a key in the AES manager
+    mutates the archive list's item too. That is upstream's design, and it is what
+    `FullyObservableCollection` (which forwards an *item's* property change tagged with its index) exists to
+    observe.
+  - **`LoadCommand`'s `Multiple` mode is sticky.** An empty selection falls through to `All` via C#'s
+    `goto case`, which also writes `ELoadingMode.All` back into settings — so one empty-selection load
+    silently changes the user's loading mode for good. Kept. `AllButNew`/`AllButModified` read a `.fbkp`
+    backup through an LZ4 frame decoder and are deferred; `All`, `Multiple` and `AllButPatched` are ported.
+  - **The mappings step is guarded, and C# does not guard it.** A real `.usmap` in a real install
+    (Satisfactory's `CommunityResources` copy) throws part-way through `UsmapParser`; C# runs `InitMappings`
+    inside `Task.Run` and lets the failure escape into an `async void`, which the dispatcher swallows. Here
+    an escaping exception would take the process down, and a broken mappings file must not stop a game that
+    has already mounted — so `MainWindow` catches and logs it. The parser defect itself is a separate,
+    recorded next slice.
+  - **`UserSettings` gained `addPerDirectory`/`removePerDirectory`.** C# indexes the dictionary directly
+    (`PerDirectory[dir] = setting`); the map owns its values here, so a replaced or removed entry has to be
+    deleted — and `CurrentDir` cleared first if it pointed at it.
+  - **`SettingsViewModel::enumerateUeGames` now delegates.** C# declares that method twice, character for
+    character, on `SettingsViewModel` and on `GameSelectorViewModel`. Rather than duplicate it, the
+    implementation lives on the latter (lower in the build's layering) and the former calls through.
 
 `CUE4Parse/CUE4Parse-Conversion/` is a new project sitting alongside `CUE4Parse/CUE4Parse/` inside the same
 checkout, mirroring the C# repo layout (both targets are defined by `CUE4Parse/CMakeLists.txt`). It holds, so
@@ -244,12 +425,18 @@ foundation** everything else builds on:
 | Reflection flag enums | `UE4/Objects/UObject/{EStructFlags,EClassFlags,EFunctionFlags}.cs` | `UE4/Objects/UObject/{EStructFlags,EClassFlags,EFunctionFlags}.h` + `CoreNetTypes.h` |
 | Provider object loading | `FileProvider/AbstractFileProvider.cs` (`LoadPackageObject`) | `FileProvider/IFileProvider.{h,cpp}` (`LoadPackageObject`/`TryLoadPackageObject<T>`) |
 | Provider stack | `FileProvider/{AbstractFileProvider,DefaultFileProvider}.cs`, `FileProvider/Vfs/{IVfsFileProvider,AbstractVfsFileProvider,FileProviderDictionary}.cs`, `FileProvider/Objects/{VersionedGameFile,OsGameFile}.cs`, `UE4/VirtualFileSystem/AesVfsReaderForProvider.cs` | same paths under `FileProvider/` and `UE4/VirtualFileSystem/` |
+| Virtual paths / plugin manifests | `UE4/Plugins/UPluginManifest.cs`, `FileProvider/AbstractFileProvider.cs` (`LoadVirtualPaths`) | `UE4/Plugins/UPluginManifest.h` (+ `FromJson` per type), `FileProvider/AbstractFileProvider.cpp`, `Utils/Json.{h,cpp}` (no C# counterpart — stands in for Newtonsoft.Json) |
+| Localization (`.locres`/`.locmeta`) | `UE4/Localization/{FTextLocalizationResource,FTextLocalizationMetaDataResource}.cs`, `UE4/Objects/Core/i18N/{FTextKey,FEntry,FTextLocalizationResourceString}.cs`, `FileProvider/InternationalizationDictionary.cs`, `FileProvider/AbstractFileProvider.cs` (`ChangeCulture`/`LoadLocalization`/`GetLanguageCode`) | same relative paths (`.h` + `.cpp` each); the culture machinery on `InternationalizationDictionary.{h,cpp}` and the localization surface on `AbstractFileProvider.{h,cpp}` |
+| App command layer | `FModel/ViewModels/Commands/{MenuCommand,CopyCommand,RightClickMenuCommand}.cs` | same paths under `FModel/ViewModels/Commands/` (`.h` + `.cpp` each); the `ApplicationViewModel` command properties; `Enums.h` gains `EBulkType`'s `\|`/`&`/`hasFlag` |
+| App settings dialog | `FModel/ViewModels/SettingsViewModel.cs`, `FModel/Views/SettingsView.xaml{,.cs}`, `FModel/Views/Resources/Controls/{DictionaryEditor,EndpointEditor}.xaml{,.cs}`, `FModel/Extensions/EnumExtensions.cs` | same relative paths under `FModel/` (`.h` + `.cpp` each, the XAML folded into the `.cpp`); `UE4/Versions/EGame.{h,cpp}` gains `EGameValues()`; `MenuCommand` gains `setOpenWindowHandler` |
+| App explorer tree | `FModel/ViewModels/{AssetsFolderViewModel,AssetsListViewModel,GameFileViewModel}.cs`, `FModel/Framework/RangeObservableCollection.cs` | same relative paths under `FModel/` (`.h` + `.cpp` each); `FModel/Framework/CollectionView.h` has no C# counterpart (see the notes above) |
+| App game loading | `FModel/ViewModels/{CUE4ParseViewModel,ThreadWorkerViewModel,GameDirectoryViewModel,AesManagerViewModel,GameSelectorViewModel}.cs`, `FModel/ViewModels/Commands/LoadCommand.cs`, `FModel/Framework/{AsyncQueue,FullyObservableCollection}.cs`, `FModel/Helper.cs`, `FModel/Views/{DirectorySelector,AesManager}.xaml{,.cs}` | same relative paths under `FModel/` (`.h` + `.cpp` each, the XAML folded into the `.cpp`); `ApplicationViewModel` gains the provider/AES/worker members + `updateProvider`; `UserSettings` gains `add`/`removePerDirectory` |
 | IO Store container | `UE4/IO/IoStoreReader.cs`, `UE4/IO/Objects/{FIoStoreTocResource,FIoStoreTocHeader,FIoStoreTocCompressedBlockEntry,FIoStoreTocEntryMeta,FIoChunkId,FIoOffsetAndLength,FIoDirectoryIndexEntry,FIoFileIndexEntry,FIoStoreEntry,FIoContainerId,FPackageId,FIoStatus}.cs` | same paths under `UE4/IO/` |
 | Pixel formats | `UE4/Assets/Exports/Texture/PixelFormat.cs` | `UE4/Assets/Exports/Texture/PixelFormat.{h,cpp}` (`EPixelFormat` 97 members, `FPixelFormatInfo` geometry table, `TryParsePixelFormat` standing in for `Enum.TryParse`) |
 | Texture platform data | `UE4/Assets/Exports/Texture/{FTexturePlatformData,FTexture2DMipMap,FVirtualTextureBuiltData,FVirtualTextureDataChunk}.cs` | same paths under `UE4/Assets/Exports/Texture/` |
 | Texture export tree (25) | `UE4/Assets/Exports/Texture/{UTexture,UTexture2D,UTextureCube,UTexture2DArray,UVolumeTexture,ULightMapTexture2D,UTextureLightProfile,UTextureProFX,UTextureMovie,UTextureRenderTarget*,UPaperSprite,UTexture*MipDataProviderFactory,…}.cs` | same relative paths, `.h`/`.{h,cpp}` |
 | Texture prerequisites | `UE4/Objects/Core/Compression/FCompressedBuffer{,Header}.cs`, `UE4/Assets/Objects/FEditorBulkData.cs`, `UE4/Objects/Engine/UAssetUserData.cs`, `UE4/Assets/Exports/Component/IAssetUserData.cs`, `UE4/Assets/Exports/Material/{CMaterialParams,UUnrealMaterial}.cs` | same relative paths, `.h` |
-| Everything not yet ported (1,041) | every remaining `CUE4Parse/**/*.cs` | a placeholder `.h` at the same relative path — `#pragma once`, the right namespace, a `TODO: port …` line, first line `// Stub for CUE4Parse/…`. Included by nothing, compiled into nothing; the tree shape matches the C# source so the gap is browsable. |
+| Everything not yet ported (1,035) | every remaining `CUE4Parse/**/*.cs` | a placeholder `.h` at the same relative path — `#pragma once`, the right namespace, a `TODO: port …` line, first line `// Stub for CUE4Parse/…`. Included by nothing, compiled into nothing; the tree shape matches the C# source so the gap is browsable. |
 
 ## Deliberate differences from C#
 
@@ -370,8 +557,14 @@ These are noted inline in the headers where they occur:
   corruption: an encrypted archive for such a game fails the mount-point probe and never mounts, rather than
   decrypting to wrong bytes. Mount/SubmitKeys also run serially — C# fans them out on `Task.Run`; the port
   has no threading layer. `VerifyGlobalData`/`GlobalData`, `FilesById`, `LoadPackage(FPackageId)`,
-  `TryFindStoreEntry`, `ScanForPackageRefs`, `LoadIniConfigs` and `PostMount` ARE ported. Deferred with
-  their layers: `LoadVirtualPaths` (plugin-manifest JSON) and localization beyond the lookup table.
+  `TryFindStoreEntry`, `ScanForPackageRefs`, `LoadIniConfigs`, `LoadVirtualPaths` and `PostMount` ARE
+  ported. Deferred with its layer: localization beyond the lookup table (`.locres`).
+- **There is no `Newtonsoft.Json`, so `Utils/Json.h` stands in for it.** C# reaches for
+  `JsonConvert.DeserializeObject<T>` and gets both a parser and reflective object mapping; C++ has neither.
+  `Utils/Json.h` is the parser half — RFC 8259, UTF-8, `\uXXXX` escapes with surrogate pairs, BOM-tolerant,
+  read-only — and each ported type writes its own `FromJson` for the mapping half. `LoadVirtualPaths` is its
+  first consumer. C#'s `Parallel.ForEach` prefilter over `Files` becomes a plain scan (no threading layer),
+  which also makes the duplicate-key winner deterministic instead of bag-order dependent.
 - **The config-ini layer is ported, parser included.** C# gets `ConfigIni` from the `Infrablack.UE4Config`
   NuGet package; there is no such package for C++, so the read path it actually uses is vendored under
   `UE4Config/Parsing/` with the same namespace and type names — sections, the token hierarchy
@@ -393,6 +586,39 @@ These are noted inline in the headers where they occur:
   (NSLOCTEXT/INVTEXT unwrapping with the `ProjectName` fallback) and `AbstractVfsFileProvider::PostMount`,
   which unmounts the archives whose AES key turned out to be wrong. One arm is deferred: a display name that
   indirects through `LOCTABLE(...)` needs `UStringTable` object loading. `TODO` at that site.
+- **Localization is ported end to end: `.locres`, `.locmeta`, and the culture machinery over them.**
+  `FTextLocalizationResource` handles all three format versions off one code path — `Legacy` (no magic
+  number, so the reader rewinds to 0 and takes strings inline), `Compact` (a string lookup table at a
+  trailing offset) and `Optimized_CRC32` (pre-hashed namespaces/keys, an entries count to skip, and
+  RefCount-decrementing "string stealing"). `FTextLocalizationMetaDataResource` reads the sibling `.locmeta`.
+  Notes on the port:
+  - **`Entries` is a vector, not a map, on purpose.** C# declares
+    `Dictionary<FTextKey, Dictionary<FTextKey, FEntry>>`, but `FTextKey` overrides neither `Equals` nor
+    `GetHashCode`, so those dictionaries key on *reference* identity: nothing is ever deduplicated or
+    overwritten, and enumeration comes back in insertion order. Insertion-ordered vectors reproduce that
+    exactly; a `std::map` keyed on `Str` would silently merge repeated namespaces and reorder them.
+  - **`CompiledCultures` gains a `bHasCompiledCultures` flag**, because C#'s `string[]?` distinguishes null
+    (below `AddedCompiledCultures`) from empty, and `InitFromMeta` returns early on null.
+  - **One bounds check is stricter than C#.** Upstream's guard is `localizedStringArray.Length > index`,
+    which lets a *negative* index through into an `IndexOutOfRangeException`; the port adds `index >= 0` so
+    it lands in the same "this entry will have no translation" path instead. No shipped file hits it.
+  - The `.locmeta` "too new" message interpolates `ELocResVersion.Latest`, not `ELocMetaVersion`'s — an
+    upstream copy-paste slip, kept verbatim.
+  - `InternationalizationDictionary` now carries `InitFromMeta`, `TryGetCulture` (where a resolvable
+    `CultureMappings` alias *overwrites* a direct hit — upstream has no `else`) and `ChangeCulture`, whose
+    `.locres` sweep is C#'s `LoadByPattern`. `Parallel.ForEach` becomes a serial scan, which also removes
+    the only remaining reason for C#'s `_provider` field.
+  - On the provider: `LoadLocalization`, `ChangeCulture`, `TryChangeCulture` and `GetLanguageCode` — the
+    per-game culture-code tables (Fortnite, World Explorers, ARK, State of Decay 2, Borderlands 3,
+    MultiVersus, Aion 2, then a generic fallback), each with its own default, which is why an unshipped
+    language resolves differently per game.
+  - Four game-specific arms are deferred with a named `TODO` at each site, all blocked on classes that are
+    still stubs: the CodeVein2 and EmbersofTheUncrowned encrypted string tables, the NevernessToEverness
+    string table, and `ChangeCulture`'s Aion2 `L10NString.dat` branch. They fall through to the standard
+    read rather than throwing.
+  - `test_localization` builds a `.locres` per format version and a `.locmeta` per version by hand, and the
+    whole path is verified on retail Satisfactory: 224 `.locres` / 9 `.locmeta` found, `fr` loading 8,925
+    entries across 55 namespaces, of which 8,406 differ from the `de` table.
 - **`VersionContainer` carries its two per-game lookup tables.** `InitOptions` builds the 20 named booleans
   the readers branch on (engine-version thresholds plus the per-game carve-outs — `GAME_DeltaForce` and
   `GAME_ArenaBreakoutMobile` for `RawIndexBuffer`, `GAME_UE4_25_Plus` for skeletal ray-tracing data,
@@ -581,9 +807,9 @@ These are noted inline in the headers where they occur:
   VFS, virtual/texture-cache paths, config inis, mappings container, the SaveAsset/CreateReader/SavePackage/
   SaveAsset/CreateReader/SavePackage families) arrives with its layers; `TryLoadPackage` returns a `Package*`,
   callers hold non-owning pointers (the provider owns loaded packages); the IoPackage import branch,
-  `/Script/` packages, and misses fall back to the in-package `ResolvedImportObject`; `.locres` loading
-  (`FTextLocalizationResource`) and the culture machinery are deferred, so the table is populated via
-  `Override`. All marked `TODO`. **`LoadPackageObject`/`TryLoadPackageObject<T>` are now ported** (in
+  `/Script/` packages, and misses fall back to the in-package `ResolvedImportObject`. All marked `TODO`.
+  (`.locres` loading and the culture machinery used to be deferred here, so the table had to be populated by
+  hand through `Override`; both are ported now — see the localization section below.) **`LoadPackageObject`/`TryLoadPackageObject<T>` are now ported** (in
   `IFileProvider.cpp`): they split a path into (package, object) like C#'s `GetPathName`, load the package, and
   return the named export cast to `T*` — used by `StringTableEntry` below.
 - **Concrete export types build through an `ObjectTypeRegistry`.** C# discovers

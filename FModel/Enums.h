@@ -69,6 +69,16 @@ namespace FModel
         Raw        = 1 << 7,
     };
 
+    // C# gets `|`, `&` and HasFlag on any enum for free; a C++ enum class has no operators at all, so the
+    // three EBulkType uses (RightClickMenuCommand combines a type with Auto, the extractors test for it)
+    // are spelled out here.
+    inline constexpr EBulkType operator|(EBulkType a, EBulkType b)
+    { return static_cast<EBulkType>(static_cast<int>(a) | static_cast<int>(b)); }
+    inline constexpr EBulkType operator&(EBulkType a, EBulkType b)
+    { return static_cast<EBulkType>(static_cast<int>(a) & static_cast<int>(b)); }
+    inline constexpr bool hasFlag(EBulkType value, EBulkType flag)
+    { return (static_cast<int>(value) & static_cast<int>(flag)) == static_cast<int>(flag); }
+
     enum class EUnluacMode
     {
         Decompile,

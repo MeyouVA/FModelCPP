@@ -201,3 +201,12 @@ add_test(NAME test_zstd COMMAND test_zstd)
 add_executable(test_brotli test_brotli.cpp)
 target_link_libraries(test_brotli PRIVATE CUE4Parse)
 add_test(NAME test_brotli COMMAND test_brotli)
+
+add_executable(test_virtual_paths test_virtual_paths.cpp)
+target_link_libraries(test_virtual_paths PRIVATE CUE4Parse)
+add_test(NAME test_virtual_paths COMMAND test_virtual_paths)
+
+add_executable(test_localization test_localization.cpp)
+target_link_libraries(test_localization PRIVATE CUE4Parse)
+add_test(NAME test_localization COMMAND test_localization)
+

@@ -189,6 +189,12 @@ namespace FModel::Settings
         // --- per-directory settings --------------------------------------------------------------------
         const QHash<QString, DirectorySettings*>& perDirectory() const { return _perDirectory; }
         void setPerDirectory(const QHash<QString, DirectorySettings*>& value);
+        // C# indexes the dictionary directly (`PerDirectory[dir] = setting` / `.Remove(dir)`); these two
+        // exist because the map owns its values here, so a replaced or removed entry has to be deleted.
+        DirectorySettings* perDirectory(const QString& gameDirectory) const
+        { return _perDirectory.value(gameDirectory, nullptr); }
+        void addPerDirectory(const QString& gameDirectory, DirectorySettings* settings);
+        void removePerDirectory(const QString& gameDirectory);
 
         // [JsonIgnore] — the directory currently loaded. Not owned: it is an entry of PerDirectory, or a
         // freshly built DirectorySettings that Save() then files into PerDirectory.

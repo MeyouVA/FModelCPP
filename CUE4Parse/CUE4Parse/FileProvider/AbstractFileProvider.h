@@ -9,10 +9,12 @@
 //     `Versions[<cvar>]`, and VersionContainer's per-game Options table is not ported (see
 //     VersionContainer.h); and GameDisplayName's LOCTABLE(...) branch needs UStringTable object loading, so a
 //     display name that indirects through a string table stays empty. TODO with each.
-//   * LoadVirtualPaths needs UPluginManifest/UPluginDescriptor JSON parsing; deferred. VirtualPaths itself
-//     IS ported because FixPath consults it (it just stays empty until then). TODO.
-//   * The localization surface beyond the Internationalization lookup table (ChangeCulture / LoadLocalization
-//     / GetLanguageCode) needs .locres reading; deferred with it. TODO.
+//   * LoadVirtualPaths IS ported, over the Utils::Json reader that stands in for Newtonsoft (see Json.h).
+//     C#'s Parallel.ForEach prefilter becomes a plain scan (no threading layer) and the CancellationToken
+//     is dropped with it; the visiting order, and so which entry wins a duplicate key, is unchanged.
+//   * The localization surface IS ported: ChangeCulture / TryChangeCulture / LoadLocalization and the
+//     per-game GetLanguageCode table, over the .locres reader (UE4/Localization/FTextLocalizationResource).
+//     GetLocalizedString already lives on IFileProvider, so it is not redeclared here.
 //   * MappingsContainer IS ported (the usmap mappings provider slots in; MappingsForGame resolves through
 //     it). The ReadScriptData / ReadShaderMaps / ReadNaniteData flags belong to unported layers and are
 //     omitted until something consumes them.
@@ -40,6 +42,7 @@
 #include "../UE4/Assets/IPackage.h"
 #include "../UE4/Objects/Core/Misc/FGuid.h"
 #include "../UE4/Objects/Engine/ELightUnits.h"
+#include "../UE4/Versions/ELanguage.h"
 #include "../UE4/Versions/VersionContainer.h"
 #include "../UE4Config/Parsing/ConfigIni.h"
 #include "../Utils/StringComparer.h"
@@ -115,6 +118,28 @@ namespace CUE4Parse::FileProvider
         // IFileProvider's TryLoadPackage: null on failure.
         UE4::Assets::IPackage* TryLoadPackage(const std::string& path) override;
         UE4::Assets::IPackage* TryLoadPackage(Objects::GameFile& file);
+
+        // C#'s LoadLocalization: switches culture and reports how many entries the table ended up with.
+        // Marked [Obsolete("use Provider.ChangeCulture instead")] upstream for the string overload only.
+        int LoadLocalization(UE4::Versions::ELanguage language = UE4::Versions::ELanguage::English)
+        { return LoadLocalization(GetLanguageCode(language)); }
+        int LoadLocalization(const std::string& culture);
+
+        // C#'s ChangeCulture: drops the current localization table and reloads it from every .locres under
+        // a matching culture directory. Throws std::out_of_range when the build does not ship the culture.
+        void ChangeCulture(const std::string& culture) { Internationalization.ChangeCulture(culture, Files); }
+        bool TryChangeCulture(const std::string& culture);
+
+        // C#'s GetLanguageCode: the culture string a given game uses for a language. Upstream carries a
+        // "TODO: get rid of this — either read the culture from .locmeta files or from inis".
+        std::string GetLanguageCode(UE4::Versions::ELanguage language) const;
+
+        // C#'s LoadVirtualPaths: rebuilds VirtualPaths from every .uplugin / .upluginmanifest among the
+        // mounted files and returns the resulting entry count. `version` is accepted (and passed on by the
+        // no-arg overload, which fills it from Versions.Ver) purely because C# declares it — the body has
+        // never read it. Game-specific providers override the version overload, so it stays virtual.
+        int LoadVirtualPaths() { return LoadVirtualPaths(Versions.Ver()); }
+        virtual int LoadVirtualPaths(const UE4::Versions::FPackageFileVersion& version);
 
         // C#'s SavePackage: the package file plus its payload siblings, path -> bytes.
         std::map<std::string, std::vector<uint8_t>> SavePackage(const std::string& path)

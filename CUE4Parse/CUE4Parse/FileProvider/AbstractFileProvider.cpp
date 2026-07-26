@@ -1,5 +1,6 @@
 #include "AbstractFileProvider.h"
 
+#include <cctype>
 #include <regex>
 #include <stdexcept>
 
@@ -13,7 +14,9 @@
 #include "../UE4/IO/IoStoreReader.h"
 #include "../UE4/IO/Objects/FIoStoreEntry.h"
 #include "../UE4/Pak/Objects/FPakEntry.h"
+#include "../UE4/Plugins/UPluginManifest.h"
 #include "../UE4/Readers/FArchive.h"
+#include "../Utils/Json.h"
 #include "../Utils/StringUtils.h"
 
 namespace CUE4Parse::FileProvider
@@ -52,11 +55,50 @@ namespace CUE4Parse::FileProvider
             }
             return true;
         }
+
+        // C#'s `new StreamReader(stream).ReadToEnd()` over a plugin descriptor. Any BOM is left in place
+        // because Utils::Json::Parse strips it.
+        std::string ReadAllText(UE4::Readers::FArchive& ar)
+        {
+            const int64_t remaining = ar.Length - ar.Position;
+            if (remaining <= 0) return {};
+
+            const auto bytes = ar.ReadBytes(static_cast<int>(remaining));
+            return std::string(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+        }
+
+        // C#'s Regex.Escape, for splicing ProjectName into a pattern.
+        std::string EscapeRegex(const std::string& s)
+        {
+            static const std::string specials = R"(\^$.|?*+()[]{})";
+            std::string escaped;
+            escaped.reserve(s.size());
+            for (const char c : s)
+            {
+                if (specials.find(c) != std::string::npos) escaped.push_back('\\');
+                escaped.push_back(c);
+            }
+            return escaped;
+        }
+
+        // C#'s string.Replace(old, ""), which removes every occurrence rather than just the first.
+        std::string RemoveAll(std::string s, const std::string& fragment)
+        {
+            for (size_t at = s.find(fragment); at != std::string::npos; at = s.find(fragment, at))
+                s.erase(at, fragment.size());
+            return s;
+        }
+
+        // C#'s `private static readonly string[] pluginExtensions`. The third entry is misspelled upstream
+        // ("Assetregisty.bin", no 'r' in "registry"), so no shipped file has ever ended with it and the
+        // switch's default arm below is unreachable. Kept verbatim: fixing the spelling would start
+        // populating VirtualPaths from asset registries, which is a behaviour change, not a port.
+        const std::string pluginExtensions[] = {".uplugin", ".upluginmanifest", "Assetregisty.bin"};
     }
 
     AbstractFileProvider::AbstractFileProvider(UE4::Versions::VersionContainer versions,
                                                Utils::StringComparer pathComparer)
-        : Versions(std::move(versions)), PathComparer(pathComparer),
+        : Versions(std::move(versions)), PathComparer(pathComparer), Internationalization(pathComparer),
           VirtualPaths(pathComparer), TextureCachePaths(pathComparer)
     {
     }
@@ -237,6 +279,273 @@ namespace CUE4Parse::FileProvider
             _gameDisplayName = "Back 4 Blood"; // They left it as LDTEXT("TEXT_UI_GameTitle")
 
         return _gameDisplayName;
+    }
+
+    int AbstractFileProvider::LoadLocalization(const std::string& culture)
+    {
+        ChangeCulture(culture);
+        return static_cast<int>(Internationalization.Count());
+    }
+
+    bool AbstractFileProvider::TryChangeCulture(const std::string& culture)
+    {
+        try
+        {
+            ChangeCulture(culture);
+            return true;
+        }
+        catch (...) // C#'s bare `catch` — a bad culture and a bad .locres are both swallowed here
+        {
+            return false;
+        }
+    }
+
+    std::string AbstractFileProvider::GetLanguageCode(UE4::Versions::ELanguage language) const
+    {
+        using UE4::Versions::ELanguage;
+
+        // C#'s ProjectName.ToLowerInvariant() switch. Each game's table lists only the languages it ships;
+        // anything else falls to that table's own default, which is why the defaults differ per game.
+        std::string project = ProjectName();
+        for (char& c : project) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+
+        if (project == "fortnitegame")
+        {
+            switch (language)
+            {
+                case ELanguage::English:            return "en";
+                case ELanguage::French:             return "fr";
+                case ELanguage::German:             return "de";
+                case ELanguage::Italian:            return "it";
+                case ELanguage::Spanish:            return "es";
+                case ELanguage::SpanishLatin:       return "es-419";
+                case ELanguage::Arabic:             return "ar";
+                case ELanguage::Japanese:           return "ja";
+                case ELanguage::Korean:             return "ko";
+                case ELanguage::Polish:             return "pl";
+                case ELanguage::PortugueseBrazil:   return "pt-BR";
+                case ELanguage::Russian:            return "ru";
+                case ELanguage::Turkish:            return "tr";
+                case ELanguage::Chinese:            return "zh-CN";
+                case ELanguage::TraditionalChinese: return "zh-Hant";
+                default:                            return "en";
+            }
+        }
+        if (project == "worldexplorers")
+        {
+            switch (language)
+            {
+                case ELanguage::English:          return "en";
+                case ELanguage::French:           return "fr";
+                case ELanguage::German:           return "de";
+                case ELanguage::Italian:          return "it";
+                case ELanguage::Spanish:          return "es";
+                case ELanguage::Japanese:         return "ja";
+                case ELanguage::Korean:           return "ko";
+                case ELanguage::PortugueseBrazil: return "pt-BR";
+                case ELanguage::Russian:          return "ru";
+                case ELanguage::Chinese:          return "zh-Hans";
+                default:                          return "en";
+            }
+        }
+        if (project == "shootergame")
+        {
+            switch (language)
+            {
+                case ELanguage::English:            return "en-US";
+                case ELanguage::French:             return "fr-FR";
+                case ELanguage::German:             return "de-DE";
+                case ELanguage::Italian:            return "it-IT";
+                case ELanguage::Spanish:            return "es-ES";
+                case ELanguage::SpanishMexico:      return "es-MX";
+                case ELanguage::Arabic:             return "ar-AE";
+                case ELanguage::Japanese:           return "ja-JP";
+                case ELanguage::Korean:             return "ko-KR";
+                case ELanguage::Polish:             return "pl-PL";
+                case ELanguage::PortugueseBrazil:   return "pt-BR";
+                case ELanguage::Russian:            return "ru-RU";
+                case ELanguage::Turkish:            return "tr-TR";
+                case ELanguage::Chinese:            return "zh-CN";
+                case ELanguage::TraditionalChinese: return "zh-TW";
+                case ELanguage::Indonesian:         return "id-ID";
+                case ELanguage::Thai:               return "th-TH";
+                case ELanguage::VietnameseVietnam:  return "vi-VN";
+                default:                            return "en-US";
+            }
+        }
+        if (project == "stateofdecay2")
+        {
+            switch (language)
+            {
+                case ELanguage::English:           return "en-US";
+                case ELanguage::AustralianEnglish: return "en-AU";
+                case ELanguage::French:            return "fr-FR";
+                case ELanguage::German:            return "de-DE";
+                case ELanguage::Italian:           return "it-IT";
+                case ELanguage::SpanishMexico:     return "es-MX";
+                case ELanguage::PortugueseBrazil:  return "pt-BR";
+                case ELanguage::Russian:           return "ru-RU";
+                case ELanguage::Chinese:           return "zh-CN";
+                default:                           return "en-US";
+            }
+        }
+        if (project == "oakgame")
+        {
+            switch (language)
+            {
+                case ELanguage::English:            return "en";
+                case ELanguage::French:             return "fr";
+                case ELanguage::German:             return "de";
+                case ELanguage::Italian:            return "it";
+                case ELanguage::Spanish:            return "es";
+                case ELanguage::Japanese:           return "ja";
+                case ELanguage::Korean:             return "ko";
+                case ELanguage::PortugueseBrazil:   return "pt-BR";
+                case ELanguage::Russian:            return "ru";
+                case ELanguage::Chinese:            return "zh-Hans-CN";
+                case ELanguage::TraditionalChinese: return "zh-Hant-TW";
+                default:                            return "en";
+            }
+        }
+        if (project == "multiversus")
+        {
+            switch (language)
+            {
+                case ELanguage::English:          return "en";
+                case ELanguage::French:           return "fr";
+                case ELanguage::German:           return "de";
+                case ELanguage::Italian:          return "it";
+                case ELanguage::Spanish:          return "es";
+                case ELanguage::SpanishLatin:     return "es-419";
+                case ELanguage::Polish:           return "pl";
+                case ELanguage::PortugueseBrazil: return "pt-BR";
+                case ELanguage::Russian:          return "ru";
+                case ELanguage::Chinese:          return "zh-Hans";
+                default:                          return "en";
+            }
+        }
+        if (project == "aion2")
+        {
+            switch (language)
+            {
+                case ELanguage::English:            return "en-US";
+                case ELanguage::Korean:             return "ko-KR";
+                case ELanguage::Japanese:           return "ja-JP";
+                case ELanguage::TraditionalChinese: return "zh-TW";
+                case ELanguage::Chinese:            return "zh-CN";
+                case ELanguage::German:             return "de-DE";
+                case ELanguage::French:             return "fr-FR";
+                case ELanguage::Spanish:            return "es-ES";
+                case ELanguage::PortugueseBrazil:   return "pt-BR";
+                case ELanguage::Russian:            return "ru-RU";
+                default:                            return "en-US";
+            }
+        }
+
+        // https://www.alchemysoftware.com/livedocs/ezscript/Topics/Catalyst/Language.htm
+        switch (language)
+        {
+            case ELanguage::English:            return "en";
+            case ELanguage::AustralianEnglish:  return "en-AU";
+            case ELanguage::BritishEnglish:     return "en-GB";
+            case ELanguage::French:             return "fr";
+            case ELanguage::German:             return "de";
+            case ELanguage::Italian:            return "it";
+            case ELanguage::Spanish:            return "es";
+            case ELanguage::SpanishLatin:       return "es-419";
+            case ELanguage::SpanishMexico:      return "es-MX";
+            case ELanguage::Arabic:             return "ar";
+            case ELanguage::Japanese:           return "ja";
+            case ELanguage::Korean:             return "ko";
+            case ELanguage::Polish:             return "pl";
+            case ELanguage::Portuguese:         return "pt";
+            case ELanguage::PortugueseBrazil:   return "pt-BR";
+            case ELanguage::Russian:            return "ru";
+            case ELanguage::Turkish:            return "tr";
+            case ELanguage::Chinese:            return "zh";
+            case ELanguage::TraditionalChinese: return "zh-Hant";
+            case ELanguage::Swedish:            return "sv";
+            case ELanguage::Thai:               return "th";
+            case ELanguage::Indonesian:         return "id";
+            case ELanguage::VietnameseVietnam:  return "vi-VN";
+            case ELanguage::Zulu:               return "zu";
+            default:                            return "en";
+        }
+    }
+
+    int AbstractFileProvider::LoadVirtualPaths(const UE4::Versions::FPackageFileVersion& version)
+    {
+        (void)version; // Declared by C# and never read by its body — see the header.
+
+        // C#'s regex, verbatim: the '.' before "upluginmanifest" is not escaped upstream, so it matches any
+        // character there. Harmless in practice (the extension check has already narrowed the candidates)
+        // and left alone.
+        const std::regex manifestPattern("^" + EscapeRegex(ProjectName()) + "/Plugins/.+.upluginmanifest$",
+                                         std::regex::icase);
+        // C# also compiles an `arregex` for "<ProjectName>/Plugins/.*AssetRegistry.bin$" and never uses it;
+        // with the misspelled extension above nothing reaches the arm it would have guarded, so it is not
+        // reproduced here.
+
+        VirtualPaths.clear();
+
+        // C#'s Parallel.ForEach prefilter into a ConcurrentBag. Without a threading layer this is a plain
+        // scan in Files' own enumeration order, which also makes the duplicate-key winner deterministic.
+        std::vector<std::pair<std::string, std::shared_ptr<GameFile>>> matchingPlugins;
+        Files.ForEach([&](const std::string& path, const std::shared_ptr<GameFile>& file)
+        {
+            for (const std::string& suffix : pluginExtensions)
+            {
+                if (EndsWithIgnoreCase(path, suffix))
+                {
+                    matchingPlugins.emplace_back(path, file);
+                    break;
+                }
+            }
+        });
+
+        for (const auto& [filePath, gameFile] : matchingPlugins)
+        {
+            const std::string& extension = gameFile->Extension();
+            if (extension == "upluginmanifest")
+            {
+                if (!std::regex_match(filePath, manifestPattern)) continue;
+                const auto stream = TryCreateReader(gameFile->Path());
+                if (stream == nullptr) continue;
+
+                const auto json = Utils::Json::Parse(ReadAllText(*stream));
+                if (!json.has_value()) continue;
+                const auto manifest = UE4::Plugins::UPluginManifest::FromJson(*json);
+
+                for (const auto& content : manifest.Contents)
+                {
+                    if (!content.Descriptor.CanContainContent) continue;
+
+                    const auto virtPath = Utils::SubstringBeforeLast(Utils::SubstringAfterLast(content.File, '/'), '.');
+                    const auto path = Utils::SubstringBeforeLast(RemoveAll(content.File, "../../../"), '/');
+                    VirtualPaths[virtPath] = path;
+                }
+            }
+            else if (extension == "uplugin")
+            {
+                if (VirtualPaths.count(gameFile->NameWithoutExtension()) != 0) continue;
+                const auto stream = TryCreateReader(gameFile->Path());
+                if (stream == nullptr) continue;
+
+                const auto json = Utils::Json::Parse(ReadAllText(*stream));
+                if (!json.has_value()) continue;
+                const auto pluginFile = UE4::Plugins::UPluginDescriptor::FromJson(*json);
+                if (!pluginFile.CanContainContent) continue;
+
+                VirtualPaths[gameFile->NameWithoutExtension()] = gameFile->Directory();
+            }
+            else
+            {
+                // Unreachable — see pluginExtensions.
+                VirtualPaths[Utils::SubstringAfterLast(gameFile->Directory(), '/')] = gameFile->Directory();
+            }
+        }
+
+        return static_cast<int>(VirtualPaths.size());
     }
 
     bool AbstractFileProvider::LoadIniConfigs()

@@ -35,8 +35,18 @@ namespace FModel
         // data) until the real command layer is ported.
         void onMenuCommand(const QString& parameter);
         void onClearLogs();
+        // The Load button — C#'s LoadingModes.LoadCommand.Execute(DirectoryFilesListBox.SelectedItems).
+        void onLoad();
+        void onArchiveSelected(int row);
 
     private:
+        // C#'s MainWindow.OnLoaded: refresh AES, init the native libraries, scan the game directory, read
+        // the keys, mount, then the mappings. Runs once, after the window is shown.
+        void runStartupSequence();
+        // Rebuilds the Archives tab list and the Folders tree from the view-models.
+        void refreshArchivesList();
+        void refreshFoldersTree();
+
         // Builders mirroring the XAML tree, top to bottom.
         void buildMenuBar();
         QWidget* buildLeftTabControl();
@@ -44,12 +54,20 @@ namespace FModel
         void buildStatusBar();
 
         QAction* makeCommandAction(const QString& text, const QString& parameter, const QString& shortcut = {});
+        // The window host MenuCommand's window arms call through (see MenuCommand::setOpenWindowHandler).
+        void openSettings(ViewModels::ApplicationViewModel* contextViewModel);
+        void openAesManager(ViewModels::ApplicationViewModel* contextViewModel);
         void log(const QString& message);
 
         // Named controls (WPF x:Name equivalents).
         QCheckBox* _featurePreviewToggle = nullptr; // "Preview New Explorer System"
         QTabWidget* _leftTabControl = nullptr;      // LeftTabControl
+        QComboBox* _loadingMode = nullptr;          // LoadingMode
         QListWidget* _directoryFilesListBox = nullptr; // DirectoryFilesListBox (Archives tab)
+        QLabel* _archiveMountPoint = nullptr;       // the Archives tab INFORMATION block
+        QLabel* _archiveFileCount = nullptr;
+        QLabel* _archiveIsEncrypted = nullptr;
+        QLabel* _archiveGuid = nullptr;
         QTreeWidget* _assetsFolderName = nullptr;   // AssetsFolderName (Folders tab)
         QLineEdit* _assetsSearchTextBox = nullptr;  // AssetsSearchTextBox (Assets tab)
         QListWidget* _assetsListName = nullptr;     // AssetsListName (Assets tab)

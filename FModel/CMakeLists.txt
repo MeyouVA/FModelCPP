@@ -43,10 +43,65 @@ set(FMODEL_VIEWMODEL_SOURCES
     Extensions/AssetCategoryExtensions.h
     Framework/FStatus.h
     Framework/FStatus.cpp
+    Extensions/EnumExtensions.h
     ViewModels/LoadingModesViewModel.h
     ViewModels/LoadingModesViewModel.cpp
+    ViewModels/SettingsViewModel.h
+    ViewModels/SettingsViewModel.cpp
     ViewModels/ApplicationViewModel.h
     ViewModels/ApplicationViewModel.cpp
+    # The explorer's folder tree. The command layer below reaches into it (MenuCommand's TreeItem arm and
+    # its collapse walk, RightClickMenuCommand's folder half), so it has to come first.
+    Framework/RangeObservableCollection.h
+    Framework/CollectionView.h
+    ViewModels/GameFileViewModel.h
+    ViewModels/GameFileViewModel.cpp
+    ViewModels/AssetsListViewModel.h
+    ViewModels/AssetsListViewModel.cpp
+    ViewModels/AssetsFolderViewModel.h
+    ViewModels/AssetsFolderViewModel.cpp
+    # The game-loading pipeline: the job funnel, the archives list, the provider host and the AES manager.
+    Framework/AsyncQueue.h
+    ViewModels/ThreadWorkerViewModel.h
+    ViewModels/ThreadWorkerViewModel.cpp
+    ViewModels/GameDirectoryViewModel.h
+    ViewModels/GameDirectoryViewModel.cpp
+    ViewModels/CUE4ParseViewModel.h
+    ViewModels/CUE4ParseViewModel.cpp
+    Helper.h
+    Helper.cpp
+    Framework/FullyObservableCollection.h
+    ViewModels/AesManagerViewModel.h
+    ViewModels/AesManagerViewModel.cpp
+    # The command layer the root view-model exposes (ported from FModel/ViewModels/Commands).
+    Framework/Command.h
+    Framework/ViewModelCommand.h
+    ViewModels/Commands/CopyCommand.h
+    ViewModels/Commands/CopyCommand.cpp
+    ViewModels/Commands/MenuCommand.h
+    ViewModels/Commands/MenuCommand.cpp
+    ViewModels/Commands/RightClickMenuCommand.h
+    ViewModels/Commands/RightClickMenuCommand.cpp
+    ViewModels/Commands/LoadCommand.h
+    ViewModels/Commands/LoadCommand.cpp
+)
+
+# The Settings window and the two editors it opens (ported from FModel/Views). Needs both lists above.
+set(FMODEL_SETTINGS_VIEW_SOURCES
+    Views/Resources/Controls/DictionaryEditor.h
+    Views/Resources/Controls/DictionaryEditor.cpp
+    Views/Resources/Controls/EndpointEditor.h
+    Views/Resources/Controls/EndpointEditor.cpp
+    Views/SettingsView.h
+    Views/SettingsView.cpp
+)
+
+# The two windows the game-loading path needs: pick a directory, then supply its AES keys.
+set(FMODEL_LOADING_VIEW_SOURCES
+    Views/DirectorySelector.h
+    Views/DirectorySelector.cpp
+    Views/AesManager.h
+    Views/AesManager.cpp
 )
 
 add_executable(FModel
@@ -55,11 +110,11 @@ add_executable(FModel
     MainWindow.cpp
     Theme.h
     Theme.cpp
-    # Framework — the MVVM base layer (ported from FModel/Framework).
-    Framework/Command.h
-    Framework/ViewModelCommand.h
+    # The Framework MVVM base layer comes in with FMODEL_VIEWMODEL_SOURCES, which the command layer needs.
     ${FMODEL_VIEWMODEL_SOURCES}
     ${FMODEL_SETTINGS_SOURCES}
+    ${FMODEL_SETTINGS_VIEW_SOURCES}
+    ${FMODEL_LOADING_VIEW_SOURCES}
     resources.qrc
 )
 
@@ -131,4 +186,82 @@ if(WIN32 AND WINDEPLOYQT_EXECUTABLE)
     add_custom_command(TARGET test_application_viewmodel POST_BUILD
         COMMAND "${WINDEPLOYQT_EXECUTABLE}" --no-translations --no-compiler-runtime "$<TARGET_FILE:test_application_viewmodel>"
         COMMENT "Deploying Qt runtime for test_application_viewmodel")
+endif()
+
+# Behavioural tests for the Settings window slice: the view-model's snapshot/save cycle, the JSON editors and
+# the window's tree, browse and key-parsing behaviour.
+add_executable(test_settings_view
+    tests/test_settings_view.cpp
+    ${FMODEL_SETTINGS_VIEW_SOURCES}
+    ${FMODEL_VIEWMODEL_SOURCES}
+    ${FMODEL_SETTINGS_SOURCES}
+)
+target_include_directories(test_settings_view PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(test_settings_view PRIVATE Qt6::Widgets Qt6::Test CUE4Parse CUE4Parse-Conversion)
+add_test(NAME test_settings_view COMMAND test_settings_view)
+if(WIN32 AND WINDEPLOYQT_EXECUTABLE)
+    add_custom_command(TARGET test_settings_view POST_BUILD
+        COMMAND "${WINDEPLOYQT_EXECUTABLE}" --no-translations --no-compiler-runtime "$<TARGET_FILE:test_settings_view>"
+        COMMENT "Deploying Qt runtime for test_settings_view")
+endif()
+
+# Optional scratch harness that drives the whole loading pipeline headlessly against a real install.
+# Off by default; configure with -DFMODEL_LOADGAME_HARNESS=<path to a .cpp> to build it.
+if(FMODEL_LOADGAME_HARNESS)
+    add_executable(loadgame ${FMODEL_LOADGAME_HARNESS}
+        ${FMODEL_VIEWMODEL_SOURCES} ${FMODEL_SETTINGS_SOURCES})
+    target_include_directories(loadgame PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(loadgame PRIVATE Qt6::Widgets CUE4Parse CUE4Parse-Conversion)
+    if(WIN32 AND WINDEPLOYQT_EXECUTABLE)
+        add_custom_command(TARGET loadgame POST_BUILD
+            COMMAND "${WINDEPLOYQT_EXECUTABLE}" --no-translations --no-compiler-runtime "$<TARGET_FILE:loadgame>")
+    endif()
+endif()
+
+# Behavioural tests for the explorer's folder tree: the bulk tree build, the search/category filters, the
+# collection-view batching and GameFileViewModel's extension resolver.
+add_executable(test_assets_folder
+    tests/test_assets_folder.cpp
+    ${FMODEL_VIEWMODEL_SOURCES}
+    ${FMODEL_SETTINGS_SOURCES}
+)
+target_include_directories(test_assets_folder PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(test_assets_folder PRIVATE Qt6::Widgets Qt6::Test CUE4Parse CUE4Parse-Conversion)
+add_test(NAME test_assets_folder COMMAND test_assets_folder)
+if(WIN32 AND WINDEPLOYQT_EXECUTABLE)
+    add_custom_command(TARGET test_assets_folder POST_BUILD
+        COMMAND "${WINDEPLOYQT_EXECUTABLE}" --no-translations --no-compiler-runtime "$<TARGET_FILE:test_assets_folder>"
+        COMMENT "Deploying Qt runtime for test_assets_folder")
+endif()
+
+# Behavioural tests for the game-loading pipeline: the job funnel, the archives list, the AES key rows,
+# LoadCommand's filters and the directory selector's list.
+add_executable(test_loading
+    tests/test_loading.cpp
+    ${FMODEL_VIEWMODEL_SOURCES}
+    ${FMODEL_SETTINGS_SOURCES}
+)
+target_include_directories(test_loading PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(test_loading PRIVATE Qt6::Widgets Qt6::Test CUE4Parse CUE4Parse-Conversion)
+add_test(NAME test_loading COMMAND test_loading)
+if(WIN32 AND WINDEPLOYQT_EXECUTABLE)
+    add_custom_command(TARGET test_loading POST_BUILD
+        COMMAND "${WINDEPLOYQT_EXECUTABLE}" --no-translations --no-compiler-runtime "$<TARGET_FILE:test_loading>"
+        COMMENT "Deploying Qt runtime for test_loading")
+endif()
+
+# Behavioural tests for the command layer: the copy triggers, the menu dispatch (including which arms are
+# still deferred), and RightClickMenuCommand's trigger/bulk tables, grouping and export paths.
+add_executable(test_commands
+    tests/test_commands.cpp
+    ${FMODEL_VIEWMODEL_SOURCES}
+    ${FMODEL_SETTINGS_SOURCES}
+)
+target_include_directories(test_commands PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(test_commands PRIVATE Qt6::Widgets Qt6::Test CUE4Parse CUE4Parse-Conversion)
+add_test(NAME test_commands COMMAND test_commands)
+if(WIN32 AND WINDEPLOYQT_EXECUTABLE)
+    add_custom_command(TARGET test_commands POST_BUILD
+        COMMAND "${WINDEPLOYQT_EXECUTABLE}" --no-translations --no-compiler-runtime "$<TARGET_FILE:test_commands>"
+        COMMENT "Deploying Qt runtime for test_commands")
 endif()

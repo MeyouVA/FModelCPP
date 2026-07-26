@@ -1,11 +1,20 @@
 // Ported from FModel/ViewModels/LoadingModesViewModel.cs
 #include "LoadingModesViewModel.h"
 
+#include "Commands/LoadCommand.h"
+
 namespace FModel::ViewModels
 {
     LoadingModesViewModel::LoadingModesViewModel(QObject* parent)
         : ViewModel(parent), _modes(enumerateLoadingModes())
     {
+    }
+
+    Commands::LoadCommand* LoadingModesViewModel::loadCommand()
+    {
+        if (!_loadCommand)
+            _loadCommand = new Commands::LoadCommand(this, this);
+        return _loadCommand;
     }
 
     QList<ELoadingMode> LoadingModesViewModel::enumerateLoadingModes()

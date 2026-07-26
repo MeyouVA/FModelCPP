@@ -2,6 +2,7 @@
 // EGame identifies the Unreal Engine version (and game-specific quirk set) an asset was cooked with.
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include "FPackageFileVersion.h"
 
@@ -272,4 +273,15 @@ namespace CUE4Parse::UE4::Versions
     // GAME_UE6_LATEST); like .NET, they report the name of the member declared first at that value.
     // Returns nullptr for a value that is not a declared member (C# would render the number instead).
     const char* EGameName(EGame game);
+
+    // C#'s Enum.GetValues<EGame>() — every member, ascending by value, which for this enum is also
+    // declaration order (a game is always its base version + a small offset).
+    //
+    // Deliberate difference: .NET yields one element per *field*, so the three pure aliases
+    // (GAME_UE4_LATEST, GAME_UE5_LATEST, GAME_UE6_LATEST) appear a second time at the value they alias.
+    // This table lists distinct values only. The one caller — FModel's SettingsViewModel.EnumerateUeGames —
+    // opens with `GroupBy(value => (int) value).Select(group => group.First())`, which collapses exactly
+    // those duplicates, and EGameName already resolves an alias to the first-declared name, so the two
+    // spellings produce the same list.
+    const EGame* EGameValues(size_t& count);
 }

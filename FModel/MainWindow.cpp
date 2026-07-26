@@ -1,10 +1,26 @@
 // Ported from FModel/MainWindow.xaml (+ MainWindow.xaml.cs) — shell/layout only. See MainWindow.h.
 #include "MainWindow.h"
 
+#include "Compression/OodleHelper.h"
+#include "Compression/ZstdHelper.h"
+#include "FileProvider/Vfs/AbstractVfsFileProvider.h"
+
 #include "Enums.h"
 #include "Framework/FStatus.h"
 #include "Settings/UserSettings.h"
 #include "ViewModels/ApplicationViewModel.h"
+#include "ViewModels/AssetsFolderViewModel.h"
+#include "ViewModels/CUE4ParseViewModel.h"
+#include "ViewModels/GameDirectoryViewModel.h"
+#include "ViewModels/GameSelectorViewModel.h"
+#include "ViewModels/LoadingModesViewModel.h"
+#include "ViewModels/ThreadWorkerViewModel.h"
+#include "ViewModels/AesManagerViewModel.h"
+#include "ViewModels/Commands/LoadCommand.h"
+#include "ViewModels/Commands/MenuCommand.h"
+#include "Views/AesManager.h"
+#include "Views/DirectorySelector.h"
+#include "Views/SettingsView.h"
 
 #include <QAction>
 #include <QCheckBox>
@@ -27,7 +43,11 @@
 #include <QTextEdit>
 #include <QTreeWidget>
 #include <QVBoxLayout>
+#include <QColor>
 #include <QDateTime>
+#include <QDialog>
+#include <QDir>
+#include <functional>
 
 namespace FModel
 {
@@ -66,6 +86,15 @@ namespace FModel
             grid->addWidget(v, r, 0, Qt::AlignLeft | Qt::AlignVCenter);
             grid->addWidget(new QLabel(caption), r, 1, Qt::AlignRight | Qt::AlignVCenter);
         }
+
+        // Same row, but the caller keeps the value label so it can be updated from a selection.
+        void addInfoRow(QGridLayout* grid, QLabel* value, const QString& caption)
+        {
+            const int r = grid->rowCount();
+            value->setTextInteractionFlags(Qt::TextSelectableByMouse);
+            grid->addWidget(value, r, 0, Qt::AlignLeft | Qt::AlignVCenter);
+            grid->addWidget(new QLabel(caption), r, 1, Qt::AlignRight | Qt::AlignVCenter);
+        }
     }
 
     MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
@@ -74,6 +103,17 @@ namespace FModel
         // except that the extra part is only meaningful once a game directory is configured.
         // WPF appends TitleExtra unconditionally because a game directory is always configured by then; here
         // it is only appended once one is, so an unconfigured shell does not show an empty "()".
+        // The DirectorySelector host has to be installed BEFORE the view-model is built: its constructor is
+        // what asks for a game directory when settings has none (C#'s AvoidEmptyGameDirectory).
+        ViewModels::ApplicationViewModel::setDirectorySelectorHandler(
+            [this](ViewModels::GameSelectorViewModel* selector, const QString& manualDirectory)
+            {
+                Views::DirectorySelector dialog(selector, this);
+                if (!manualDirectory.isEmpty())
+                    dialog.addManualGame(manualDirectory);
+                return dialog.exec() == QDialog::Accepted;
+            });
+
         _applicationView = new ViewModels::ApplicationViewModel(this);
         QString title = _applicationView->initialWindowTitle();
         if (Settings::UserSettings::Default()->currentDir() != nullptr)
@@ -81,6 +121,31 @@ namespace FModel
         setWindowTitle(title);
         setWindowIcon(QIcon(QStringLiteral(":/Resources/FModel.ico")));
         resize(1280, 800);
+
+        // The window host for MenuCommand's window arms (C#'s Helper.OpenWindow). Two windows are ported;
+        // the rest of the arms still report through `deferred` below.
+        ViewModels::Commands::MenuCommand::setOpenWindowHandler(
+            [this](const QString& window, ViewModels::ApplicationViewModel* contextViewModel)
+            {
+                if (window == QStringLiteral("Settings"))
+                {
+                    openSettings(contextViewModel);
+                    return true;
+                }
+                if (window == QStringLiteral("Directory_AES"))
+                {
+                    openAesManager(contextViewModel);
+                    return true;
+                }
+                return false;
+            });
+
+        // Report the menu arms that are still waiting on a port (see onMenuCommand).
+        connect(_applicationView->menuCommand(), &ViewModels::Commands::MenuCommand::deferred, this,
+                [this](const QString& arm, const QString& waitingOn)
+                {
+                    log(QStringLiteral("Command '%1' — not yet implemented (waiting on %2).").arg(arm, waitingOn));
+                });
 
         buildMenuBar();
 
@@ -109,6 +174,10 @@ namespace FModel
         _logRtbName->append(QString());
         _logRtbName->append(QStringLiteral(
             "<span style=\"color:#D49220;\">[WRN]</span> FModel is free and open-source, if you paid for this, you got scammed"));
+
+        // C#'s Loaded event. Queued so the window is on screen first — the sequence can take seconds on a
+        // large install, and (unlike C#) it runs on this thread.
+        QMetaObject::invokeMethod(this, &MainWindow::runStartupSequence, Qt::QueuedConnection);
     }
 
     void MainWindow::buildMenuBar()
@@ -194,26 +263,44 @@ namespace FModel
             auto* modeRow = new QHBoxLayout;
             modeRow->addWidget(new QLabel(QStringLiteral("Loading Mode")));
             modeRow->addSpacing(10);
-            auto* loadingMode = new QComboBox;
-            loadingMode->setObjectName(QStringLiteral("LoadingMode"));
-            loadingMode->addItems({QStringLiteral("All"), QStringLiteral("Multiple"), QStringLiteral("Filtered")});
-            modeRow->addWidget(loadingMode, 1);
+            _loadingMode = new QComboBox;
+            _loadingMode->setObjectName(QStringLiteral("LoadingMode"));
+            for (ELoadingMode mode : _applicationView->loadingModes()->modes())
+                _loadingMode->addItem(description(mode), QVariant::fromValue<int>(static_cast<int>(mode)));
+            _loadingMode->setCurrentIndex(
+                _loadingMode->findData(static_cast<int>(Settings::UserSettings::Default()->loadingMode())));
+            connect(_loadingMode, &QComboBox::currentIndexChanged, this, [this](int index)
+            {
+                if (index >= 0)
+                    Settings::UserSettings::Default()->setLoadingMode(
+                        static_cast<ELoadingMode>(_loadingMode->itemData(index).toInt()));
+            });
+            modeRow->addWidget(_loadingMode, 1);
             v->addLayout(modeRow);
             auto* load = new QPushButton(QStringLiteral("Load"));
             load->setObjectName(QStringLiteral("LoadButton"));
+            connect(load, &QPushButton::clicked, this, &MainWindow::onLoad);
             v->addWidget(load);
 
             v->addWidget(captionSeparator(QStringLiteral("GAME ARCHIVES")));
             _directoryFilesListBox = new QListWidget;
             _directoryFilesListBox->setObjectName(QStringLiteral("DirectoryFilesListBox"));
+            // ELoadingMode::Multiple hands the selection to LoadCommand, so the list is multi-select.
+            _directoryFilesListBox->setSelectionMode(QAbstractItemView::ExtendedSelection);
             v->addWidget(_directoryFilesListBox, 1);
             v->addWidget(captionSeparator(QStringLiteral("INFORMATION")));
             auto* info = newInfoGrid();
-            addInfoRow(info, QStringLiteral("/"), QStringLiteral("Mount Point"));
-            addInfoRow(info, QStringLiteral("0 Files"), QStringLiteral("File Count"));
-            addInfoRow(info, QStringLiteral("False"), QStringLiteral("Is Encrypted"));
-            addInfoRow(info, QStringLiteral("00000000000000000000000000000000"), QStringLiteral("Global Unique Identifier"));
+            _archiveMountPoint = new QLabel(QStringLiteral("/"));
+            _archiveFileCount = new QLabel(QStringLiteral("0 Files"));
+            _archiveIsEncrypted = new QLabel(QStringLiteral("False"));
+            _archiveGuid = new QLabel(QStringLiteral("00000000000000000000000000000000"));
+            addInfoRow(info, _archiveMountPoint, QStringLiteral("Mount Point"));
+            addInfoRow(info, _archiveFileCount, QStringLiteral("File Count"));
+            addInfoRow(info, _archiveIsEncrypted, QStringLiteral("Is Encrypted"));
+            addInfoRow(info, _archiveGuid, QStringLiteral("Global Unique Identifier"));
             v->addLayout(info);
+            connect(_directoryFilesListBox, &QListWidget::currentRowChanged,
+                    this, &MainWindow::onArchiveSelected);
             _leftTabControl->addTab(page, QStringLiteral("Archives"));
         }
 
@@ -429,7 +516,189 @@ namespace FModel
 
     void MainWindow::onMenuCommand(const QString& parameter)
     {
-        log(QStringLiteral("Command '%1' — not yet implemented.").arg(parameter));
+        // WPF binds every MenuItem to {Binding MenuCommand} with the parameter as CommandParameter; here the
+        // QActions carry the same strings and route into the same command. Arms whose target is not ported
+        // yet raise `deferred`, reported by the handler wired up in the constructor (the log line used to be
+        // unconditional, because there was no command behind it).
+        _applicationView->menuCommand()->execute(parameter);
+    }
+
+    void MainWindow::openSettings(ViewModels::ApplicationViewModel* contextViewModel)
+    {
+        // C#'s `new SettingsView().Show()` is modeless, and Helper.OpenWindow re-focuses an already-open one
+        // instead of making a second. Neither is ported: the window runs modal here, which gives the same
+        // single-instance guarantee without Helper, and a fresh instance each time is correct either way
+        // because the view-model re-snapshots UserSettings in its constructor.
+        Views::SettingsView view(contextViewModel, this);
+        connect(&view, &Views::SettingsView::deferred, this,
+                [this](const QString& step, const QString& waitingOn)
+                {
+                    log(QStringLiteral("Settings step '%1' — not yet implemented (waiting on %2).").arg(step, waitingOn));
+                });
+        view.exec();
+    }
+
+    void MainWindow::openAesManager(ViewModels::ApplicationViewModel* contextViewModel)
+    {
+        // C#'s AesManager is modeless behind Helper's single-instance guard; modal gives the same guarantee.
+        // Closing it is what remounts the provider (see AesManager::closeEvent), so the lists are rebuilt
+        // afterwards.
+        Views::AesManager view(contextViewModel, this);
+        view.exec();
+        refreshArchivesList();
+    }
+
+    void MainWindow::runStartupSequence()
+    {
+        // C#'s OnLoaded, in the same order, minus the steps whose subsystems are unported (the update check,
+        // the AES/news API calls, Discord, ImGui settings, vgmstream, unluac).
+        auto* settings = Settings::UserSettings::Default();
+        if (settings->currentDir() == nullptr)
+        {
+            log(QStringLiteral("No game directory is configured — pick one from Directory > Selector."));
+            return;
+        }
+
+        // C# downloads these DLLs first (InitOodle / InitZlib / InitDetex). The download half is unported;
+        // the loaders are real, and without Oodle most modern paks cannot be decompressed at all.
+        const QString dataDir = QDir(settings->outputDirectory()).filePath(QStringLiteral(".data"));
+        if (CUE4Parse::Compression::OodleHelper::Initialize(
+                QDir(dataDir).filePath(QString::fromLatin1(CUE4Parse::Compression::OodleHelper::OODLE_NAME_CURRENT))
+                    .toStdString()) ||
+            CUE4Parse::Compression::OodleHelper::Initialize())
+        {
+            log(QStringLiteral("Oodle loaded."));
+        }
+        else
+        {
+            log(QStringLiteral("Oodle could not be loaded — Oodle-compressed archives will fail to read."));
+        }
+        if (CUE4Parse::Compression::ZstdHelper::Initialize())
+            log(QStringLiteral("Zstd loaded."));
+
+        auto* cue4Parse = _applicationView->cue4Parse();
+        if (cue4Parse->isUnsupportedLiveService())
+        {
+            log(QStringLiteral("This entry streams the game from a live service, which is not ported yet. "
+                               "Pick a local installation instead."));
+            return;
+        }
+
+        cue4Parse->initialize();                 // scan the directory, register containers, count loose files
+        _applicationView->aesManager()->initAes(); // build the key rows from what settings knows
+        _applicationView->updateProvider(true);   // submit the keys, mount, PostMount
+
+        // Deliberate difference from C#: the mappings step is guarded. C# runs it inside Task.Run and the
+        // awaiting `async void` swallows the failure at the dispatcher; here an escaping exception would
+        // take the process down, and a broken .usmap must not stop a game that has already mounted.
+        try
+        {
+            const QString mappings = cue4Parse->initMappings();
+            if (!mappings.isEmpty())
+                log(QStringLiteral("Mappings pulled from '%1'").arg(mappings));
+        }
+        catch (const std::exception& e)
+        {
+            log(QStringLiteral("Could not read the configured mappings file: %1").arg(QString::fromUtf8(e.what())));
+        }
+
+        for (const QString& warning : cue4Parse->verifyConsoleVariables())
+            log(warning);
+
+        refreshArchivesList();
+
+        auto* provider = cue4Parse->provider();
+        log(QStringLiteral("%1 | Archives: %2 mounted of %3 | AES keys: %4 | Files: %5")
+                .arg(_applicationView->gameDisplayName())
+                .arg(provider->MountedVfs().size())
+                .arg(provider->MountedVfs().size() + provider->UnloadedVfs().size())
+                .arg(provider->Keys().size())
+                .arg(provider->Files.Count()));
+    }
+
+    void MainWindow::refreshArchivesList()
+    {
+        if (_directoryFilesListBox == nullptr)
+            return;
+
+        const QSignalBlocker blocker(_directoryFilesListBox);
+        _directoryFilesListBox->clear();
+
+        auto* gameDirectory = _applicationView->cue4Parse()->gameDirectory();
+        for (ViewModels::FileItem* item : gameDirectory->directoryFilesView().items())
+        {
+            auto* row = new QListWidgetItem(item->name(), _directoryFilesListBox);
+            row->setData(Qt::UserRole, QVariant::fromValue(item));
+            // A container that never mounted (usually a missing AES key) cannot contribute anything.
+            if (!item->isEnabled())
+                row->setForeground(QColor(QStringLiteral("#8a8a95")));
+        }
+    }
+
+    void MainWindow::refreshFoldersTree()
+    {
+        if (_assetsFolderName == nullptr)
+            return;
+
+        _assetsFolderName->clear();
+
+        // The tree view-model is fully built by BulkPopulate; this walks it into QTreeWidgetItems. A later
+        // slice replaces this with a real model so the tree does not have to be materialised up front.
+        std::function<void(ViewModels::TreeItem*, QTreeWidgetItem*)> addNode =
+            [&](ViewModels::TreeItem* node, QTreeWidgetItem* parentItem)
+        {
+            auto* item = parentItem != nullptr ? new QTreeWidgetItem(parentItem)
+                                               : new QTreeWidgetItem(_assetsFolderName);
+            item->setText(0, node->header());
+            item->setData(0, Qt::UserRole, QVariant::fromValue(node));
+            for (ViewModels::TreeItem* child : node->foldersView().items())
+                addNode(child, item);
+        };
+
+        auto* assetsFolder = _applicationView->cue4Parse()->assetsFolder();
+        for (ViewModels::TreeItem* root : assetsFolder->foldersView().items())
+            addNode(root, nullptr);
+    }
+
+    void MainWindow::onLoad()
+    {
+        // C#: UserSettings.Default.LoadingMode is already set by the combo; the command takes the archive
+        // selection, which only ELoadingMode::Multiple reads.
+        QVariantList selection;
+        for (QListWidgetItem* row : _directoryFilesListBox->selectedItems())
+            selection.append(row->data(Qt::UserRole));
+
+        auto* command = _applicationView->loadingModes()->loadCommand();
+        const QMetaObject::Connection refused =
+            connect(command, &ViewModels::Commands::LoadCommand::refused, this,
+                    [this](const QString& reason) { log(reason); });
+        const QMetaObject::Connection deferred =
+            connect(command, &ViewModels::Commands::LoadCommand::deferred, this,
+                    [this](const QString& what, const QString& waitingOn)
+                    { log(QStringLiteral("'%1' — not yet implemented (waiting on %2).").arg(what, waitingOn)); });
+
+        command->execute(QVariant(selection));
+
+        disconnect(refused);
+        disconnect(deferred);
+
+        refreshFoldersTree();
+        _leftTabControl->setCurrentIndex(_applicationView->selectedLeftTabIndex());
+    }
+
+    void MainWindow::onArchiveSelected(int row)
+    {
+        if (row < 0 || _directoryFilesListBox == nullptr)
+            return;
+
+        auto* item = _directoryFilesListBox->item(row)->data(Qt::UserRole).value<ViewModels::FileItem*>();
+        if (item == nullptr)
+            return;
+
+        _archiveMountPoint->setText(item->mountPoint().isEmpty() ? QStringLiteral("/") : item->mountPoint());
+        _archiveFileCount->setText(QStringLiteral("%1 Files").arg(item->fileCount()));
+        _archiveIsEncrypted->setText(item->isEncrypted() ? QStringLiteral("True") : QStringLiteral("False"));
+        _archiveGuid->setText(QString::fromStdString(item->guid().ToString()));
     }
 
     void MainWindow::onClearLogs()
